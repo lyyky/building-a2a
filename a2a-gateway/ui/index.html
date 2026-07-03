@@ -1071,11 +1071,15 @@ function getAdminToken() {
   return localStorage.getItem(ADMIN_TOKEN_KEY) || "";
 }
 
+// 防止 401 弹窗被 cancel 后又无限弹
+let _adminTokenPromptShown = false;
+
 function setAdminToken() {
   const cur = getAdminToken();
   const t = prompt("请输入 Admin Token（环境变量 A2A_ADMIN_TOKEN 的值）:", cur);
   if (t === null) return;
   localStorage.setItem(ADMIN_TOKEN_KEY, t);
+  _adminTokenPromptShown = false;  // 设了之后允许下次再弹
   renderAdminTokenStatus();
   loadAdminPanel();  // 重新加载
 }
@@ -1085,13 +1089,47 @@ function renderAdminTokenStatus() {
   $("#adminTokenStatus").textContent = t ? "已设置（" + t.slice(0, 6) + "..." + "）" : "未设置";
 }
 
+function ensureAdminToken() {
+  // 如果 Admin Token 未设置或设错，弹窗引导用户输入。返回最终 token。
+  let t = getAdminToken();
+  if (t) return t;
+  if (_adminTokenPromptShown) return t;  // 已经在弹了，别递归
+  _adminTokenPromptShown = true;
+  setAdminToken();
+  t = getAdminToken();
+  _adminTokenPromptShown = false;
+  return t;
+}
+
 async function adminFetch(url, opts = {}) {
   const headers = opts.headers ? { ...opts.headers } : {};
-  const t = getAdminToken();
+  let t = getAdminToken();
+  if (!t) t = ensureAdminToken();
   if (t) headers["X-Admin-Token"] = t;
-  const r = await fetch(url, { ...opts, headers });
+  let r = await fetch(url, { ...opts, headers });
+  // 401 且 token 存在 → token 错了，弹窗让用户重设，重试一次
+  if (r.status === 401 && t) {
+    const body = await r.text().catch(() => "");
+    // 后端没 token（v1 ADMIN_TOKEN_REQUIRED）时 body 是 "missing"；
+    // 有 token 但错时 body 是 "invalid"。两种都让用户重试。
+    if (body.includes("missing") || body.includes("invalid") || body === "") {
+      if (!_adminTokenPromptShown) {
+        _adminTokenPromptShown = true;
+        const ok = confirm("Admin Token 错或失效，要重新设置吗？\n（点取消后底部「adminMsg」会显示错误）");
+        _adminTokenPromptShown = false;
+        if (ok) {
+          setAdminToken();
+          t = getAdminToken();
+          if (t) {
+            headers["X-Admin-Token"] = t;
+            r = await fetch(url, { ...opts, headers });
+          }
+        }
+      }
+    }
+  }
   if (r.status === 401) {
-    $("#adminMsg").textContent = "401: Admin Token 错或未配（点上方「设置」按钮）";
+    $("#adminMsg").textContent = "401: Admin Token 错或未配（点上方 🔑 旁的「设置」按钮，或刷新页面在引导弹窗里设）";
     throw new Error("401 unauthorized");
   }
   if (!r.ok) {
@@ -1276,6 +1314,13 @@ async function restartGateway() {
 // 页面加载时拉一次
 window.addEventListener("DOMContentLoaded", () => {
   renderAdminTokenStatus();
+  // 没设 Admin Token 就主动弹窗引导（不要等 fetch 401 才发现）
+  if (!getAdminToken()) {
+    // 延迟一下，避免和引导页/其他 modal 抢焦点
+    setTimeout(() => {
+      if (!getAdminToken()) setAdminToken();
+    }, 800);
+  }
   loadAdminPanel();
 });
 </script>
