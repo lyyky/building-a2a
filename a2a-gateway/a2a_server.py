@@ -334,10 +334,12 @@ def _negotiate(request: Request, card: dict, kind: str) -> Any:
         tags_html = "".join(
             f'<span class="tag">{t}</span>' for t in (s.get("tags") or [])
         )
+        s_desc = s.get("description") or ""
+        desc_html = f'<div class=desc>{_esc(s_desc)}</div>' if s_desc else ""
         skills_html_parts.append(
             f'<div class="skill">'
             f'<h4>{_esc(s.get("name") or s.get("id") or "(skill)")}</h4>'
-            f'{f"<div class=desc>{_esc(s.get("description") or "")}</div>" if s.get("description") else ""}'
+            f'{desc_html}'
             f'{tags_html}'
             f'</div>'
         )
