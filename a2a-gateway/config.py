@@ -176,6 +176,11 @@ class UserPool:
     async def get(self, api_key: str) -> Caller | None:
         if not api_key:
             return None
+        # 单用户模式 fallback：A2A_GATEWAY_USERS 未配置时，
+        # 任何非空 api_key 都视为"以 BAI_USERNAME/BAI_PASSWORD 身份访问"。
+        if not USER_KEYS:
+            return await self._get_single_user_caller(api_key)
+        # 多用户模式：按 api_key 查表
         # 快路径：已加载 + 已登录
         c = self._by_key.get(api_key)
         if c is not None and c.client._logged_in:  # noqa: SLF001
@@ -186,6 +191,42 @@ class UserPool:
             if c is not None and c.client._logged_in:  # noqa: SLF001
                 return c
             return await self._load_or_login(api_key)
+
+    async def _get_single_user_caller(self, api_key: str) -> Caller | None:
+        """单用户模式：所有 caller 共用一个 BAI_USERNAME 的 client，key 只用于 caller_conv_id 命名空间。"""
+        # 快路径
+        c = self._by_key.get(api_key)
+        if c is not None and c.client._logged_in:  # noqa: SLF001
+            return c
+        async with self._lock:
+            c = self._by_key.get(api_key)
+            if c is not None and c.client._logged_in:  # noqa: SLF001
+                return c
+            if not BAI_USERNAME or not BAI_PASSWORD:
+                log.error("单用户模式但 BAI_USERNAME/BAI_PASSWORD 未配")
+                return None
+            if c is not None:
+                # 复用 client（env 改了直接重登）
+                c.client._username = BAI_USERNAME  # noqa: SLF001
+                c.client._password = BAI_PASSWORD  # noqa: SLF001
+                c.client._logged_in = False  # noqa: SLF001
+                if await c.client.login():
+                    return c
+                return None
+            client = BuildingAIClient.__new__(BuildingAIClient)
+            client._base = BAI_BASE  # noqa: SLF001
+            client._username = BAI_USERNAME  # noqa: SLF001
+            client._password = BAI_PASSWORD  # noqa: SLF001
+            client._client = None  # noqa: SLF001
+            client._lock = asyncio.Lock()  # noqa: SLF001
+            client._logged_in = False  # noqa: SLF001
+            if not await client.login():
+                log.warning("单用户模式首次登录失败: user=%s", BAI_USERNAME)
+                return None
+            caller = Caller(api_key=api_key, username=BAI_USERNAME, client=client)
+            self._by_key[api_key] = caller
+            log.info("单用户模式：api_key=%s... → BAI user=%s 登录成功", api_key[:8], BAI_USERNAME)
+            return caller
 
     async def _load_or_login(self, api_key: str) -> Caller | None:
         cfg = USER_KEYS.get(api_key)
@@ -509,16 +550,11 @@ class BuildingAIClient:
         return 200, result
 
     async def retrieve_dataset(self, dataset_id: str, query: str) -> tuple[int, Any]:
-        """知识库检索。"""
+        """知识库检索。BuildingAI 1.15 接受扁平 topK/scoreThreshold，不要嵌套 retrievalModel（会返 40000）。"""
         body = {
             "query": query,
             "topK": DATASET_TOP_K,
             "scoreThreshold": DATASET_SCORE_THRESHOLD,
-            "retrievalModel": {
-                "searchMethod": "hybrid_search",
-                "topK": DATASET_TOP_K,
-                "scoreThreshold": DATASET_SCORE_THRESHOLD,
-            },
         }
         return await self.post_json(f"/api/ai-datasets/{dataset_id}/retrieve", body)
 

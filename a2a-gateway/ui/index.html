@@ -410,6 +410,25 @@
 
 <script>
 const $ = (sel) => document.querySelector(sel);
+
+// 试聊用 api_key：单用户模式随便填；多用户模式必须是已配置的 key。
+// sessionStorage 存（关 tab 失效，不持久化）。
+const TRIAL_KEY_STORAGE = "a2a_trial_api_key";
+function getTrialApiKey() {
+  let k = sessionStorage.getItem(TRIAL_KEY_STORAGE);
+  if (k) return k;
+  // 第一次弹窗问；单用户模式提示填任意字符串
+  k = prompt(
+    "试聊需要 API key。\n" +
+    "• 单用户模式（没配 A2A_GATEWAY_USERS）：填任意非空字符串即可。\n" +
+    "• 多用户模式：填 admin 面板「已配置用户」里的 api_key。\n" +
+    "（仅本 tab 有效，关 tab 失效）"
+  );
+  if (!k || !k.trim()) return null;
+  k = k.trim();
+  sessionStorage.setItem(TRIAL_KEY_STORAGE, k);
+  return k;
+}
 const el = (tag, attrs = {}, ...children) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -650,6 +669,8 @@ function renderRetrievePanel(ds) {
 async function sendChat(agent, ta, streamEl, btnEl, useStream = false) {
   const text = ta.value.trim();
   if (!text) return;
+  const apiKey = getTrialApiKey();
+  if (!apiKey) return;  // 弹窗已开
   btnEl.disabled = true;
   streamEl.innerHTML = "";
   streamEl.textContent = "请求中…";
@@ -661,7 +682,10 @@ async function sendChat(agent, ta, streamEl, btnEl, useStream = false) {
   try {
     const r = await fetch(`/a2a/agents/${agent.id}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + apiKey,
+      },
       body: JSON.stringify(payload),
     });
     const ct = (r.headers.get("content-type") || "").toLowerCase();
@@ -740,6 +764,8 @@ function appendSSEFrame(streamEl, frame) {
 async function sendRetrieve(ds, ta, streamEl, btnEl) {
   const text = ta.value.trim();
   if (!text) return;
+  const apiKey = getTrialApiKey();
+  if (!apiKey) return;  // 弹窗已开
   btnEl.disabled = true;
   streamEl.innerHTML = "";
   streamEl.textContent = "请求中…";
@@ -749,7 +775,12 @@ async function sendRetrieve(ds, ta, streamEl, btnEl) {
   };
   try {
     const r = await fetch(`/a2a/datasets/${ds.id}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + apiKey,
+      },
+      body: JSON.stringify(payload)
     });
     const j = await r.json();
     streamEl.innerHTML = "";
