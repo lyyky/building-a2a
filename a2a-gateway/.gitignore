@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
+env/
+
+# runtime data (mcp whitelist 持久化, 启动时若缺失会重建)
+/data/mcp_whitelist.json
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# 临时 log / pid
+*.log
+*.pid

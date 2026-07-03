@@ -1,0 +1,1155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>A2A Gateway · 管理面板</title>
+<!-- 1x1 透明 PNG，避免浏览器控制台一片 favicon.ico 404 -->
+<link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=" />
+<style>
+  :root {
+    --bg: #f6f7fb;
+    --panel: #ffffff;
+    --text: #1f2330;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --accent: #4f46e5;
+    --accent-soft: #eef2ff;
+    --ok: #16a34a;
+    --warn: #d97706;
+    --err: #dc2626;
+    --code-bg: #0b1020;
+    --code-text: #e2e8f0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --panel: #1a1d24;
+      --text: #e6e8ee;
+      --muted: #9ca3af;
+      --border: #2b2f3a;
+      --accent: #818cf8;
+      --accent-soft: #1e1f3a;
+      --code-bg: #06080f;
+      --code-text: #d1d5db;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  header.top {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  header.top h1 { font-size: 17px; margin: 0; }
+  header.top .pill {
+    font-size: 12px; padding: 2px 10px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  header.top .spacer { flex: 1; }
+  button {
+    font: inherit; cursor: pointer; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text);
+    padding: 6px 12px; border-radius: 6px;
+    transition: background .12s ease, border-color .12s ease;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary {
+    background: var(--accent); color: white; border-color: var(--accent);
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+
+  main { display: grid; grid-template-columns: 360px 1fr; min-height: calc(100vh - 56px); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+
+  aside.left {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+  }
+  aside.left .sect {
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+  }
+  aside.left .sect h3 {
+    margin: 0 0 8px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .04em; color: var(--muted);
+  }
+  .item {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px; margin: 6px 0;
+    cursor: pointer; background: var(--panel);
+    transition: border-color .12s ease, background .12s ease;
+  }
+  .item:hover { border-color: var(--accent); }
+  .item.selected { border-color: var(--accent); background: var(--accent-soft); }
+  .item .name { font-weight: 600; }
+  .item .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .item .tags { display: inline-flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+  .tag {
+    font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .tag.kb { background: #fef3c7; color: #92400e; }
+  .empty { color: var(--muted); font-style: italic; padding: 6px 0; }
+
+  section.right {
+    padding: 18px 24px;
+    overflow-y: auto;
+  }
+  section.right h2 { margin: 0 0 12px; font-size: 16px; }
+  .statusbar {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+  }
+  .statusbar .lbl { color: var(--muted); font-size: 12px; }
+  .statusbar .val { font-weight: 600; }
+  .statusbar .val.ok { color: var(--ok); }
+  .statusbar .val.err { color: var(--err); }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px; margin-bottom: 16px;
+  }
+  .panel h4 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+  textarea, input[type=text] {
+    width: 100%; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text);
+    padding: 8px 10px; border-radius: 6px;
+    font: inherit; resize: vertical;
+  }
+  textarea { min-height: 70px; }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .stream {
+    margin-top: 12px;
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+    min-height: 60px;
+    max-height: 400px; overflow-y: auto;
+    font-size: 12.5px;
+  }
+  .stream .ev-status   { color: #93c5fd; }
+  .stream .ev-artifact { color: #86efac; }
+  .stream .ev-error    { color: #fca5a5; }
+  .stream .ev-text     { color: #fde68a; }
+
+  table.kv { border-collapse: collapse; width: 100%; }
+  table.kv td { padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+  table.kv td:first-child { color: var(--muted); width: 40%; }
+
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  pre { background: var(--code-bg); color: var(--code-text); padding: 8px 10px; border-radius: 6px; overflow-x: auto; }
+
+  .muted { color: var(--muted); }
+  .err-text { color: var(--err); }
+  .ok-text  { color: var(--ok); }
+
+  /* MCP 配置对话框 */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    display: none; align-items: center; justify-content: center; z-index: 99;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 22px; max-width: 640px; width: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,.25);
+    max-height: 90vh; overflow-y: auto;
+  }
+  .modal h3 { margin: 0 0 6px; font-size: 16px; }
+  .modal p  { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .field {
+    display: flex; align-items: center; gap: 10px;
+    margin: 8px 0;
+  }
+  .field label {
+    font-size: 12px; color: var(--muted); width: 64px; flex-shrink: 0;
+  }
+  .field input {
+    flex: 1; padding: 6px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text);
+    font: inherit; font-family: ui-monospace, monospace;
+  }
+  .copy-status {
+    margin-top: 8px; font-size: 12px; min-height: 18px;
+  }
+  .copy-status.ok  { color: var(--ok); }
+  .copy-status.err { color: var(--err); }
+  textarea.copy-area {
+    width: 100%; min-height: 90px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--code-bg); color: var(--code-text);
+    padding: 10px 12px; font-family: ui-monospace, monospace;
+    font-size: 12.5px; line-height: 1.5;
+    resize: vertical;
+  }
+  .modal-actions {
+    margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end;
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>A2A Gateway</h1>
+  <span class="pill" id="env">loading…</span>
+  <span class="spacer"></span>
+  <span id="lastRefresh" class="muted">最后刷新：—</span>
+  <button id="btnRefresh" class="primary">↻ 立即刷新 registry</button>
+  <button id="btnCopyBase">复制 MCP 注册命令</button>
+</header>
+
+<main>
+  <aside class="left">
+    <div class="sect">
+      <h3>智能体（agents）<span id="agentCount" class="muted"></span></h3>
+      <div id="agentList"></div>
+    </div>
+    <div class="sect">
+      <h3>知识库（datasets）<span id="datasetCount" class="muted"></span></h3>
+      <div id="datasetList"></div>
+    </div>
+    <div class="sect">
+      <h3>端点（endpoints）</h3>
+      <div class="muted" style="line-height:1.9">
+        <div><a target="_blank" href="/docs">/docs</a> · Swagger UI</div>
+        <div><a target="_blank" href="/redoc">/redoc</a> · ReDoc</div>
+        <div><a target="_blank" href="/openapi.json">/openapi.json</a></div>
+        <div><code>GET /health</code></div>
+        <div><code>GET /.well-known/agent.json</code></div>
+      </div>
+    </div>
+  </aside>
+
+  <section class="right">
+    <div class="statusbar" id="statusbar">
+      <div><div class="lbl">BuildingAI</div><div class="val" id="sBai">—</div></div>
+      <div><div class="lbl">登录</div><div class="val" id="sLogged">—</div></div>
+      <div><div class="lbl">轮询间隔</div><div class="val" id="sInterval">—</div></div>
+      <div><div class="lbl">最后刷新</div><div class="val" id="sLast">—</div></div>
+      <div><div class="lbl">版本</div><div class="val">A2A Gateway 0.1</div></div>
+    </div>
+
+    <div id="detail">
+      <div class="panel">
+        <h4>欢迎</h4>
+        <p class="muted">
+          左侧选择<strong>智能体</strong>或<strong>知识库</strong>即可进入试聊/检索面板。
+          上方 "立即刷新" 强制从 BuildingAI 拉一次最新列表。
+        </p>
+      </div>
+    </div>
+
+    <!-- 白名单面板独立于 #detail，避开 render 的 innerHTML 清空 -->
+    <div class="panel">
+      <h4>MCP Host 白名单</h4>
+      <p class="muted" style="margin:0 0 10px;">
+        FastMCP 默认只允许 <code>127.0.0.1</code> / <code>localhost</code> / <code>[::1]</code>；
+        BuildingAI 在容器里访问时 Host 头需要在这里放行。
+        修改立即生效，<strong>无需重启</strong>。
+      </p>
+      <div id="wlList"></div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <input id="wlNew" type="text" placeholder="如 118.190.156.116:8000 或 host.docker.internal:*"
+               style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font-family: ui-monospace, monospace;" />
+        <button class="primary" onclick="addWl()">+ 添加</button>
+      </div>
+      <div id="wlMsg" style="margin-top:8px; font-size:12px; min-height:16px;"></div>
+    </div>
+
+    <!-- 多用户 & 系统配置面板（独立于 #detail，避开 render 清空） -->
+    <div class="panel">
+      <h4>多用户 &amp; 系统配置</h4>
+      <p class="muted" style="margin:0 0 10px;">
+        管理 a2a-gateway 调 BuildingAI 的账号（每个 API key 一个 BuildingAI 用户）。
+        改完要 <strong>重启 a2a-gateway</strong> 生效。
+      </p>
+
+      <!-- Admin Token 状态条 -->
+      <div style="margin-bottom:14px; padding:8px 10px; background:var(--accent-soft); border-radius:6px; font-size:12.5px; display:flex; align-items:center; gap:8px;">
+        🔑 Admin Token: <span id="adminTokenStatus" class="muted">未设置</span>
+        <button onclick="setAdminToken()" style="padding:3px 10px; font-size:12px;">设置</button>
+        <span class="muted" style="font-size:11px;">（环境变量 A2A_ADMIN_TOKEN 的值）</span>
+      </div>
+
+      <!-- MASTER_KEY -->
+      <h5 style="margin:14px 0 6px;">MASTER_KEY（Fernet 加密 key，加密所有用户密码用）</h5>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+        <code id="masterKeyView" style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--code-bg); color:var(--code-text); font-family:ui-monospace,monospace;">（未设置）</code>
+        <button onclick="regenMasterKey()" class="primary" style="padding:6px 14px;">🔄 重新生成</button>
+      </div>
+      <p class="muted" style="font-size:11.5px; margin:0 0 14px;">
+        重新生成会让所有现有用户的密文失效，需要重新加。明文只在生成瞬间在弹窗里显示一次。
+      </p>
+
+      <!-- 基础段 -->
+      <h5 style="margin:14px 0 6px;">基础段（单用户模式凭证 + 网关监听）</h5>
+      <div id="baseEnvList" style="display:grid; grid-template-columns:160px 1fr 60px; gap:6px; align-items:center; margin-bottom:8px;"></div>
+      <p class="muted" style="font-size:11.5px; margin:0 0 14px;">
+        BAI_USERNAME / BAI_PASSWORD 是单用户模式凭证（多用户模式留空也行）；
+        BAI_BASE / GATEWAY_HOST / GATEWAY_PORT 是同容器场景的默认值。
+      </p>
+
+      <!-- 已配置用户列表 -->
+      <h5 style="margin:14px 0 6px;">已配置用户（api_key → BuildingAI 用户）</h5>
+      <div id="usersList" style="margin-bottom:10px;"></div>
+
+      <!-- 添加用户 -->
+      <h5 style="margin:14px 0 6px;">+ 添加用户</h5>
+      <div style="display:grid; grid-template-columns:160px 1fr; gap:6px; align-items:center; margin-bottom:8px;">
+        <label>API key</label>
+        <input id="newUserKey" type="text" placeholder="sk-corp-alice" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font-family:ui-monospace,monospace;" />
+        <label>BuildingAI 用户名</label>
+        <input id="newUserName" type="text" placeholder="alice" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text);" />
+        <label>BuildingAI 密码</label>
+        <input id="newUserPwd" type="password" placeholder="明文，后端自动 Fernet 加密" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text);" />
+      </div>
+      <button class="primary" onclick="addUser()">+ 添加用户</button>
+
+      <!-- 重启 -->
+      <h5 style="margin:18px 0 6px;">⚠️ 改完要重启 a2a-gateway</h5>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="primary" onclick="restartGateway()" style="padding:6px 14px;">🔄 重启 a2a-gateway</button>
+        <span id="restartMsg" class="muted" style="font-size:12px;"></span>
+      </div>
+
+      <div id="adminMsg" style="margin-top:12px; font-size:12px; min-height:16px;"></div>
+    </div>
+  </section>
+</main>
+
+<!-- MCP 配置对话框（点"复制 MCP 注册命令"触发） -->
+<div id="mcpModal" class="modal-bg" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h3>🤖 BuildingAI MCP 服务注册</h3>
+    <p>BuildingAI <strong>只支持 sse / streamable-http</strong>，不支持 stdio。
+       选下面其中一种方式，把对应字段填到 <strong>AI 应用 → MCP → 添加 MCP</strong>：</p>
+
+    <div style="display:flex; gap:8px; margin:8px 0 12px;">
+      <button id="mcpModeStreamable" class="primary">📡 streamable-http (推荐)</button>
+      <button id="mcpModeSse">🌊 sse (兼容)</button>
+    </div>
+
+    <div class="field">
+      <label>名称</label>
+      <input id="mcpName" type="text" readonly value="a2a-gateway" />
+    </div>
+    <div class="field">
+      <label>通信方式</label>
+      <input id="mcpType" type="text" readonly />
+    </div>
+    <div class="field">
+      <label>URL</label>
+      <input id="mcpCmd" type="text" readonly />
+    </div>
+
+    <textarea id="mcpFull" class="copy-area" readonly></textarea>
+
+    <div style="margin-top:10px; padding:8px 10px; background: var(--accent-soft); border-radius: 6px; font-size:12px; color: var(--muted);">
+      <strong>说明：</strong>把 gateway 进程跑在同一台 BuildingAI 可访问的机器上，
+      URL 内的 localhost 指 gateway 所在机器的 hostname。
+    </div>
+
+    <div class="modal-actions">
+      <button id="mcpCopyBtn" class="primary">📋 复制全部</button>
+      <button id="mcpCloseBtn">关闭</button>
+    </div>
+    <div id="mcpCopyStatus" class="copy-status"></div>
+  </div>
+</div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, attrs = {}, ...children) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k === "html") n.innerHTML = v;
+    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
+    else if (v != null) n.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  }
+  return n;
+};
+
+let STATE = { status: null, selected: null, _lastRenderedSel: null };
+
+async function loadStatus() {
+  const r = await fetch("/api/admin/status");
+  STATE.status = await r.json();
+  render();
+}
+
+async function manualRefresh() {
+  $("#btnRefresh").disabled = true;
+  try {
+    const r = await fetch("/api/admin/refresh", { method: "POST" });
+    const j = await r.json();
+    if (!j.ok) alert("刷新失败: " + (j.error || "?"));
+    await loadStatus();
+  } finally {
+    $("#btnRefresh").disabled = false;
+  }
+}
+
+async function loadWhitelist() {
+  try {
+    const r = await fetch("/api/admin/mcp/whitelist", { cache: "no-store" });
+    if (!r.ok) {
+      console.warn("白名单 API 返回", r.status);
+      $("#wlList").innerHTML = "<div class='err-text'>加载失败: HTTP " + r.status + "</div>";
+      return;
+    }
+    const j = await r.json();
+    console.log("白名单已加载：", j.items);
+    renderWhitelist(j.items || []);
+  } catch (e) {
+    console.error("白名单加载异常", e);
+    $("#wlList").innerHTML = "<div class='err-text'>加载异常: " + e + "</div>";
+  }
+}
+
+function renderWhitelist(items) {
+  const wrap = $("#wlList");
+  wrap.innerHTML = "";
+  if (!items.length) {
+    wrap.appendChild(el("div", { class: "empty" }, "(空)"));
+    return;
+  }
+  for (const host of items) {
+    const row = el("div", { style: "display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; margin-bottom:6px; background:var(--bg);" },
+      el("code", { style: "flex:1; font-size:13px;" }, host),
+      el("button", { onclick: () => removeWl(host) }, "删除"),
+    );
+    wrap.appendChild(row);
+  }
+}
+
+async function saveWhitelist(items) {
+  const r = await fetch("/api/admin/mcp/whitelist", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hosts: items }),
+  });
+  const j = await r.json();
+  const msg = $("#wlMsg");
+  if (j.ok) {
+    msg.className = "ok-text"; msg.textContent = "✓ 已保存（" + j.items.length + " 项），立即生效";
+    renderWhitelist(j.items);
+  } else {
+    msg.className = "err-text"; msg.textContent = "✗ 保存失败: " + (j.error || "?");
+  }
+}
+
+async function addWl() {
+  const inp = $("#wlNew");
+  const v = inp.value.trim();
+  if (!v) return;
+  const items = (await (await fetch("/api/admin/mcp/whitelist")).json()).items || [];
+  if (items.includes(v)) { inp.value = ""; return; }
+  items.push(v);
+  await saveWhitelist(items);
+  inp.value = "";
+}
+
+async function removeWl(host) {
+  const items = (await (await fetch("/api/admin/mcp/whitelist")).json()).items || [];
+  const idx = items.indexOf(host);
+  if (idx < 0) return;
+  items.splice(idx, 1);
+  await saveWhitelist(items);
+}
+
+function fmtAge(sec) {
+  if (sec == null) return "—";
+  if (sec < 60) return Math.floor(sec) + " 秒前";
+  if (sec < 3600) return Math.floor(sec / 60) + " 分钟前";
+  return Math.floor(sec / 3600) + " 小时前";
+}
+
+function renderStatusBar() {
+  const s = STATE.status;
+  if (!s) return;
+  $("#env").textContent = s.buildingai.base;
+  $("#sBai").textContent = s.buildingai.base;
+  $("#sLogged").textContent = s.buildingai.logged_in
+    ? "已登录 · " + s.buildingai.username : "未登录";
+  $("#sLogged").className = "val " + (s.buildingai.logged_in ? "ok" : "err");
+  $("#sInterval").textContent = s.registry.poll_interval + "s";
+  $("#sLast").textContent = fmtAge(s.registry.last_refresh_age_sec);
+  $("#lastRefresh").textContent = "最后刷新：" + fmtAge(s.registry.last_refresh_age_sec);
+}
+
+function renderSidebar() {
+  const s = STATE.status;
+  if (!s) return;
+  const a = $("#agentList");
+  const d = $("#datasetList");
+  a.innerHTML = ""; d.innerHTML = "";
+  $("#agentCount").textContent = " · " + s.registry.agent_count;
+  $("#datasetCount").textContent = " · " + s.registry.dataset_count;
+
+  if (!s.agents.length) a.appendChild(el("div", { class: "empty" }, "暂无智能体"));
+  for (const ag of s.agents) {
+    const node = el("div", { class: "item" + (STATE.selected?.kind === "agent" && STATE.selected.id === ag.id ? " selected" : "") },
+      el("div", { class: "name" }, ag.name || "(未命名)"),
+      el("div", { class: "meta" }, "id " + ag.id.slice(0, 8) + "…"),
+      el("div", { class: "tags" },
+        ...(ag.capabilities || []).map(c => el("span", { class: "tag" }, c))
+      ),
+    );
+    node.onclick = () => { STATE.selected = { kind: "agent", ...ag }; render(); };
+    a.appendChild(node);
+  }
+  if (!s.datasets.length) d.appendChild(el("div", { class: "empty" }, "暂无知识库"));
+  for (const ds of s.datasets) {
+    const node = el("div", { class: "item" + (STATE.selected?.kind === "dataset" && STATE.selected.id === ds.id ? " selected" : "") },
+      el("div", { class: "name" }, ds.name || "(未命名)"),
+      el("div", { class: "meta" }, "id " + ds.id.slice(0, 8) + "…"),
+      el("div", { class: "tags" }, el("span", { class: "tag kb" }, "rag"))
+    );
+    node.onclick = () => { STATE.selected = { kind: "dataset", ...ds }; render(); };
+    d.appendChild(node);
+  }
+}
+
+function renderDetail() {
+  const target = $("#detail");
+  target.innerHTML = "";
+  const sel = STATE.selected;
+  if (!sel) {
+    target.appendChild(el("div", { class: "panel" },
+      el("h4", {}, "欢迎"),
+      el("p", { class: "muted" }, "左侧选择智能体或知识库即可进入试聊/检索面板。")
+    ));
+    return;
+  }
+
+  if (sel.kind === "agent") {
+    target.appendChild(el("div", { class: "panel" },
+      el("h4", {}, "智能体详情"),
+      el("table", { class: "kv" },
+        rowKV("名称", sel.name),
+        rowKV("ID", sel.id),
+        rowKV("能力", (sel.capabilities || []).join(" / ") || "—"),
+        rowKV("描述", sel.description || "—"),
+      ),
+      el("div", { style: "margin-top:10px" },
+        el("button", { onclick: (e) => loadCard(e.target, "agent", sel.id) }, "查看 A2A Agent Card"),
+        el("a", { href: `/a2a/agents/${sel.id}/card`, target: "_blank", style: "margin-left:8px" },
+          el("button", {}, "新 tab 打开 ↗"))
+      )
+    ));
+
+    target.appendChild(renderChatPanel(sel));
+  } else {
+    target.appendChild(el("div", { class: "panel" },
+      el("h4", {}, "知识库详情"),
+      el("table", { class: "kv" },
+        rowKV("名称", sel.name),
+        rowKV("ID", sel.id),
+        rowKV("描述", sel.description || "—"),
+      ),
+      el("div", { style: "margin-top:10px" },
+        el("button", { onclick: (e) => loadCard(e.target, "dataset", sel.id) }, "查看 A2A KB Card"),
+        el("a", { href: `/a2a/datasets/${sel.id}/card`, target: "_blank", style: "margin-left:8px" },
+          el("button", {}, "新 tab 打开 ↗"))
+      )
+    ));
+
+    target.appendChild(renderRetrievePanel(sel));
+  }
+}
+
+function rowKV(k, v) {
+  return el("tr", {},
+    el("td", {}, k),
+    el("td", {}, String(v))
+  );
+}
+
+function renderChatPanel(agent) {
+  const ta = el("textarea", { placeholder: "输入要发给智能体的问题…" });
+  const stream = el("div", { class: "stream" }, "（尚无输出）");
+  const btn = el("button", { class: "primary", onclick: () => sendChat(agent, ta, stream, btn) }, "▶ 试聊（非流）");
+  const btnStream = el("button", { onclick: () => sendChat(agent, ta, stream, btnStream, true) }, "▶ 试聊（SSE 流）");
+  const panel = el("div", { class: "panel" },
+    el("h4", {}, "A2A 试聊"),
+    ta,
+    el("div", { class: "row" }, btn, btnStream),
+    stream
+  );
+  return panel;
+}
+
+function renderRetrievePanel(ds) {
+  const ta = el("textarea", { placeholder: "检索关键词…" });
+  const stream = el("div", { class: "stream" }, "（尚无输出）");
+  const btn = el("button", { class: "primary", onclick: () => sendRetrieve(ds, ta, stream, btn) }, "▶ 检索");
+  return el("div", { class: "panel" },
+    el("h4", {}, "知识库检索"),
+    ta,
+    el("div", { class: "row" }, btn),
+    stream
+  );
+}
+
+async function sendChat(agent, ta, streamEl, btnEl, useStream = false) {
+  const text = ta.value.trim();
+  if (!text) return;
+  btnEl.disabled = true;
+  streamEl.innerHTML = "";
+  streamEl.textContent = "请求中…";
+  const method = useStream ? "message/stream" : "message/send";
+  const payload = {
+    jsonrpc: "2.0", id: 1, method,
+    params: { message: { role: "user", parts: [{ kind: "text", text }] } }
+  };
+  try {
+    const r = await fetch(`/a2a/agents/${agent.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    const isSSE = useStream || ct.includes("text/event-stream");
+
+    if (isSSE) {
+      streamEl.innerHTML = "";
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        // SSE 用 "\n\n" 分隔事件，按空行切
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const frame = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          if (frame.trim()) appendSSEFrame(streamEl, frame);
+        }
+      }
+      if (buf.trim()) appendSSEFrame(streamEl, buf);
+    } else {
+      const j = await r.json();
+      streamEl.innerHTML = "";
+      streamEl.appendChild(el("pre", { html: JSON.stringify(j, null, 2) }));
+    }
+  } catch (e) {
+    streamEl.innerHTML = "";
+    streamEl.textContent = "ERROR: " + e;
+  } finally {
+    btnEl.disabled = false;
+  }
+}
+
+// 解析 SSE 完整 frame（一个或多个 "event: x\ndata: y\n" 行）
+function appendSSEFrame(streamEl, frame) {
+  let event = "message";
+  const dataLines = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trim());
+    }
+  }
+  const data = dataLines.join("\n");
+  let parsed;
+  try { parsed = JSON.parse(data); } catch { parsed = data; }
+  const cls =
+    event === "status" ? "ev-status" :
+    event === "artifact" ? "ev-artifact" :
+    event === "error" ? "ev-error" : "ev-text";
+
+  // artifact 事件尝试把 text 里嵌套的 JSON 解出来，更可读
+  if (event === "artifact" && parsed && parsed.parts) {
+    const text = parsed.parts.map(p => {
+      if (p.kind !== "text") return JSON.stringify(p);
+      try {
+        const inner = JSON.parse(p.text);
+        if (inner && inner.message) {
+          const c = inner.message.content || "";
+          return c || "(agent returned empty content)";
+        }
+      } catch {}
+      return p.text;
+    }).join("\n");
+    streamEl.appendChild(el("div", { class: cls, style: "white-space: pre-wrap;" }, "[" + event + "] " + text));
+    return;
+  }
+
+  streamEl.appendChild(el("div", { class: cls }, "[" + event + "] " + (typeof parsed === "string" ? parsed : JSON.stringify(parsed))));
+}
+
+async function sendRetrieve(ds, ta, streamEl, btnEl) {
+  const text = ta.value.trim();
+  if (!text) return;
+  btnEl.disabled = true;
+  streamEl.innerHTML = "";
+  streamEl.textContent = "请求中…";
+  const payload = {
+    jsonrpc: "2.0", id: 1, method: "message/send",
+    params: { message: { role: "user", parts: [{ kind: "text", text }] } }
+  };
+  try {
+    const r = await fetch(`/a2a/datasets/${ds.id}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    streamEl.innerHTML = "";
+    streamEl.appendChild(el("pre", { html: JSON.stringify(j, null, 2) }));
+  } catch (e) {
+    streamEl.innerHTML = "";
+    streamEl.textContent = "ERROR: " + e;
+  } finally {
+    btnEl.disabled = false;
+  }
+}
+
+async function loadCard(btn, kind, id) {
+  // 把下一级的可展开区放在按钮所在 panel 的底部
+  const panel = btn.closest(".panel");
+  let existing = panel.querySelector(".card-render");
+  if (existing) {
+    existing.remove();
+    if (btn._expanded) { btn._expanded = false; btn.textContent = btn.textContent.replace("▲ ", ""); }
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "加载中…";
+  try {
+    const path = kind === "agent" ? `/a2a/agents/${id}/card` : `/a2a/datasets/${id}/card`;
+    const r = await fetch(path);
+    const j = await r.json();
+    btn.textContent = "▲ 收起 A2A Card";
+    btn._expanded = true;
+    const cardEl = renderCard(j, kind);
+    panel.appendChild(cardEl);
+    cardEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  } catch (e) {
+    btn.textContent = "查看失败，重试";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderCard(card, kind) {
+  // 渲染 A2A Card：friendly 视图 + 原始 JSON
+  const wrap = el("div", { class: "card-render", style: "margin-top:14px; padding:10px 12px; border:1px dashed var(--border); border-radius:6px; background: var(--bg);" });
+
+  wrap.appendChild(el("div", { style: "display:flex; align-items:center; gap:8px; margin-bottom:6px;" },
+    el("strong", {}, "🤖 " + (card.name || "(未命名)")),
+    el("span", { class: "pill", style: "background:var(--accent-soft); color:var(--accent); padding:1px 8px; border-radius:999px; font-size:11px;" }, kind === "agent" ? "A2A Agent Card" : "A2A KB Card"),
+    el("span", { class: "muted", style: "font-size:11px;" }, "v" + (card.version || "1.0"))
+  ));
+
+  if (card.description) {
+    wrap.appendChild(el("div", { style: "margin:4px 0; color: var(--text);" }, card.description));
+  }
+
+  if (card.url) {
+    wrap.appendChild(el("div", { style: "margin:4px 0; font-size:12px;" },
+      el("span", { class: "muted" }, "URL: "),
+      el("code", {}, card.url)
+    ));
+  }
+
+  if (card.capabilities) {
+    const caps = [];
+    for (const [k, v] of Object.entries(card.capabilities)) caps.push(k + "=" + v);
+    wrap.appendChild(el("div", { style: "margin:4px 0; font-size:12px;" },
+      el("span", { class: "muted" }, "Capabilities: "),
+      el("span", {}, caps.join(" · "))
+    ));
+  }
+
+  if (card.defaultInputModes || card.defaultOutputModes) {
+    wrap.appendChild(el("div", { style: "margin:4px 0; font-size:12px;" },
+      el("span", { class: "muted" }, "Modes: "),
+      el("span", {}, "in=" + JSON.stringify(card.defaultInputModes || []) + "  out=" + JSON.stringify(card.defaultOutputModes || []))
+    ));
+  }
+
+  if (Array.isArray(card.skills) && card.skills.length) {
+    wrap.appendChild(el("div", { style: "margin-top:8px;" },
+      el("div", { class: "muted", style: "font-size:11px; margin-bottom:4px;" }, "Skills"),
+      ...card.skills.map(s => el("div", { style: "border:1px solid var(--border); border-radius:4px; padding:6px 8px; margin:4px 0;" },
+        el("div", { style: "font-weight:600;" }, s.name || s.id),
+        s.description ? el("div", { class: "muted", style: "font-size:12px;" }, s.description) : null,
+        Array.isArray(s.tags) && s.tags.length ? el("div", { style: "margin-top:4px;" },
+          ...s.tags.map(t => el("span", { class: "tag", style: "margin-right:4px;" }, t))
+        ) : null,
+      ))
+    ));
+  }
+
+  // 折叠的原始 JSON
+  const det = el("details", { style: "margin-top:10px;" },
+    el("summary", { style: "cursor:pointer; font-size:12px; color:var(--muted);" }, "原始 JSON"),
+  );
+  det.appendChild(el("pre", { style: "margin:6px 0 0; max-height:240px; overflow:auto;" }, JSON.stringify(card, null, 2)));
+  wrap.appendChild(det);
+
+  return wrap;
+}
+
+function appendStreamLine(streamEl, raw) {
+  // SSE frame: "event: ...\ndata: ...\n\n"
+  let event = "message";
+  let data = raw;
+  if (raw.startsWith("event:")) {
+    const sp = raw.indexOf("\n");
+    if (sp >= 0) {
+      event = raw.slice(6, sp).trim();
+      data = raw.slice(sp + 1).replace(/^data:\s?/, "").trim();
+    }
+  }
+  let parsed = data;
+  try { parsed = JSON.parse(data); } catch {}
+  const cls =
+    event === "status" ? "ev-status" :
+    event === "artifact" ? "ev-artifact" :
+    event === "error" ? "ev-error" : "ev-text";
+  streamEl.appendChild(el("div", { class: cls }, "[" + event + "] " + (typeof parsed === "string" ? parsed : JSON.stringify(parsed))));
+}
+
+function render() {
+  renderStatusBar();
+  renderSidebar();
+  // 关键：选中的资源没变就不重画 detail，否则会把正在输入/聊天内容擦掉
+  // （每 8 秒 status 轮询会触到 render()，旧逻辑每 8 秒擦一次 detail）
+  if (STATE._lastRenderedSel !== STATE.selected) {
+    renderDetail();
+    STATE._lastRenderedSel = STATE.selected;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  $("#btnRefresh").onclick = manualRefresh;
+  $("#btnCopyBase").onclick = () => openMcpModal();
+  setupMcpModal();
+  loadStatus().catch(e => alert("加载失败: " + e));
+  loadWhitelist().catch(e => console.warn("白名单加载失败", e));
+  setInterval(loadStatus, 8000);
+});
+
+function setupMcpModal() {
+  const modal = $("#mcpModal");
+  const full = $("#mcpFull");
+  const status = $("#mcpCopyStatus");
+  const btn = $("#mcpModeStreamable");
+  const btn2 = $("#mcpModeSse");
+
+  function setMode(mode) {
+    if (mode === "sse") {
+      $("#mcpType").value = "sse";
+      $("#mcpCmd").value = `${location.protocol}//${location.host}/mcp-sse/sse`;
+      full.value =
+        "名称: a2a-gateway\n" +
+        "通信方式: sse\n" +
+        `URL: ${location.protocol}//${location.host}/mcp-sse/sse`;
+      btn.classList.remove("primary"); btn2.classList.add("primary");
+    } else {
+      $("#mcpType").value = "streamable-http";
+      $("#mcpCmd").value = `${location.protocol}//${location.host}/mcp/`;
+      full.value =
+        "名称: a2a-gateway\n" +
+        "通信方式: streamable-http\n" +
+        `URL: ${location.protocol}//${location.host}/mcp/`;
+      btn2.classList.remove("primary"); btn.classList.add("primary");
+    }
+  }
+
+  btn.onclick = () => { setMode("streamable"); $("#mcpCopyStatus").textContent = ""; full.focus(); full.select(); };
+  btn2.onclick = () => { setMode("sse"); $("#mcpCopyStatus").textContent = ""; full.focus(); full.select(); };
+
+  $("#mcpCloseBtn").onclick = () => modal.classList.remove("show");
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("show"); });
+
+  $("#mcpCopyBtn").onclick = () => {
+    full.focus();
+    full.select();
+    let ok = false;
+    let errMsg = "";
+    function tryExecCommand() {
+      try {
+        ok = document.execCommand("copy");
+      } catch (e) { errMsg = String(e); }
+      if (ok) {
+        status.textContent = "✓ 已复制到剪贴板（execCommand fallback）";
+        status.className = "copy-status ok";
+      } else {
+        status.textContent = "✗ 自动复制失败，请按 ⌘C / Ctrl+C 手动复制（已自动全选）";
+        status.className = "copy-status err";
+        if (errMsg) status.textContent += "（" + errMsg + "）";
+      }
+    }
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(full.value).then(
+          () => { status.textContent = "✓ 已复制到剪贴板"; status.className = "copy-status ok"; },
+          () => tryExecCommand()
+        );
+        return;
+      }
+    } catch (e) { /* fallthrough */ }
+    tryExecCommand();
+  };
+
+  // 默认 streamable-http
+  setMode("streamable");
+}
+
+function openMcpModal() {
+  $("#mcpModal").classList.add("show");
+  $("#mcpCopyStatus").textContent = "";
+  $("#mcpFull").focus();
+  $("#mcpFull").select();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 多用户 & 系统配置（admin 端点，自动带 X-Admin-Token）
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ADMIN_TOKEN_KEY = "a2a_admin_token";
+
+function getAdminToken() {
+  return localStorage.getItem(ADMIN_TOKEN_KEY) || "";
+}
+
+function setAdminToken() {
+  const cur = getAdminToken();
+  const t = prompt("请输入 Admin Token（环境变量 A2A_ADMIN_TOKEN 的值）:", cur);
+  if (t === null) return;
+  localStorage.setItem(ADMIN_TOKEN_KEY, t);
+  renderAdminTokenStatus();
+  loadAdminPanel();  // 重新加载
+}
+
+function renderAdminTokenStatus() {
+  const t = getAdminToken();
+  $("#adminTokenStatus").textContent = t ? "已设置（" + t.slice(0, 6) + "..." + "）" : "未设置";
+}
+
+async function adminFetch(url, opts = {}) {
+  const headers = opts.headers ? { ...opts.headers } : {};
+  const t = getAdminToken();
+  if (t) headers["X-Admin-Token"] = t;
+  const r = await fetch(url, { ...opts, headers });
+  if (r.status === 401) {
+    $("#adminMsg").textContent = "401: Admin Token 错或未配（点上方「设置」按钮）";
+    throw new Error("401 unauthorized");
+  }
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error(j.detail || j.error || `HTTP ${r.status}`);
+  }
+  return r;
+}
+
+function adminMsg(text, isErr = false) {
+  const el = $("#adminMsg");
+  el.textContent = text;
+  el.style.color = isErr ? "var(--err, #c00)" : "var(--ok, #080)";
+  setTimeout(() => { if (el.textContent === text) el.textContent = ""; }, 5000);
+}
+
+async function loadAdminPanel() {
+  await Promise.all([loadMasterKey(), loadBaseEnv(), loadUsers()]);
+}
+
+async function loadMasterKey() {
+  try {
+    const r = await adminFetch("/api/admin/system/master-key");
+    const j = await r.json();
+    const view = $("#masterKeyView");
+    if (j.set) {
+      view.textContent = j.masked_prefix + "（" + (j.masked_prefix.length * 2) + " 字符已被脱敏，完整 key 在 .env）";
+    } else {
+      view.textContent = "（未设置）";
+      view.style.color = "var(--err, #c00)";
+    }
+  } catch (e) {
+    $("#masterKeyView").textContent = "（读取失败：" + e.message + "）";
+  }
+}
+
+async function regenMasterKey() {
+  if (!confirm("重新生成 MASTER_KEY 会让所有现有用户的密文失效，需要重新加用户。继续？")) return;
+  try {
+    const r = await adminFetch("/api/admin/system/master-key", { method: "POST" });
+    const j = await r.json();
+    // 弹窗显示一次完整 key（用户自己复制保存）
+    prompt("新 MASTER_KEY（已写入 .env，复制保存好这个弹窗里看到的值）：", j.master_key);
+    adminMsg("MASTER_KEY 已重新生成（重启后生效）");
+    await loadMasterKey();
+  } catch (e) {
+    adminMsg("重新生成失败：" + e.message, true);
+  }
+}
+
+async function loadBaseEnv() {
+  try {
+    const r = await adminFetch("/api/admin/system/env");
+    const j = await r.json();
+    const wrap = $("#baseEnvList");
+    wrap.innerHTML = "";
+    const v = j.values;
+    const fields = [
+      { k: "BAI_USERNAME", label: "BAI_USERNAME", type: "text" },
+      { k: "BAI_PASSWORD", label: "BAI_PASSWORD", type: "text", masked: v.BAI_PASSWORD_masked },
+      { k: "BAI_BASE", label: "BAI_BASE", type: "text" },
+      { k: "GATEWAY_HOST", label: "GATEWAY_HOST", type: "text" },
+      { k: "GATEWAY_PORT", label: "GATEWAY_PORT", type: "text" },
+    ];
+    for (const f of fields) {
+      const lbl = el("label", { style: "font-size:12.5px; color:var(--muted);" }, f.label);
+      const inp = el("input", {
+        type: f.type,
+        id: "env_" + f.k,
+        value: f.masked || v[f.k] || "",
+        placeholder: f.masked ? "已设置：" + f.masked : "（未设置）",
+        style: "padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font-family:ui-monospace,monospace;",
+      });
+      const btn = el("button", { onclick: `saveEnvField('${f.k}')`, style: "padding:4px 10px; font-size:12px;" }, "保存");
+      wrap.appendChild(lbl);
+      wrap.appendChild(inp);
+      wrap.appendChild(btn);
+    }
+  } catch (e) {
+    $("#baseEnvList").innerHTML = '<span class="muted">读取失败：' + e.message + "</span>";
+  }
+}
+
+async function saveEnvField(k) {
+  const inp = $("#env_" + k);
+  const v = inp.value.trim();
+  try {
+    await adminFetch("/api/admin/system/env", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates: { [k]: v } }),
+    });
+    adminMsg(k + " 已更新（重启后生效）");
+  } catch (e) {
+    adminMsg("保存失败：" + e.message, true);
+  }
+}
+
+async function loadUsers() {
+  try {
+    const r = await adminFetch("/api/admin/users");
+    const j = await r.json();
+    const wrap = $("#usersList");
+    wrap.innerHTML = "";
+    if (j.items.length === 0) {
+      wrap.innerHTML = '<div class="muted" style="font-size:12.5px;">（无配置用户，走单用户模式）</div>';
+      return;
+    }
+    for (const it of j.items) {
+      const row = el("div", {
+        style: "display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; margin-bottom:6px; background:var(--bg);",
+      },
+        el("code", { style: "flex:1; font-family:ui-monospace,monospace; font-size:12.5px;" },
+          it.api_key_prefix + " → " + it.username),
+        el("span", {
+          class: "muted",
+          style: "font-size:11.5px; padding:2px 8px; border-radius:4px; " +
+                 (it.logged_in ? "background:#dfd; color:#060;" : "background:#fdd; color:#900;"),
+        }, it.logged_in ? "已登录" : "未登录"),
+        el("button", { onclick: `delUser('${it.api_key_prefix.replace(/\.\.\.$/, "")}')`, style: "padding:3px 10px; font-size:12px;" }, "删除"),
+      );
+      wrap.appendChild(row);
+    }
+  } catch (e) {
+    $("#usersList").innerHTML = '<div class="muted">读取失败：' + e.message + "</div>";
+  }
+}
+
+async function addUser() {
+  const api_key = $("#newUserKey").value.trim();
+  const bai_username = $("#newUserName").value.trim();
+  const bai_password = $("#newUserPwd").value;
+  if (!api_key || !bai_username || !bai_password) {
+    adminMsg("三个字段都要填", true);
+    return;
+  }
+  try {
+    const r = await adminFetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key, bai_username, bai_password }),
+    });
+    const j = await r.json();
+    adminMsg("已添加 " + j.api_key_prefix + "（重启后生效）");
+    $("#newUserKey").value = "";
+    $("#newUserName").value = "";
+    $("#newUserPwd").value = "";
+    await loadUsers();
+  } catch (e) {
+    adminMsg("添加失败：" + e.message, true);
+  }
+}
+
+async function delUser(prefix) {
+  if (!confirm("删除用户 " + prefix + "... ？")) return;
+  // 前端只显示前 8 字符，要用完整 api_key 删——用 GET 列表的完整值
+  // 这里简化：让后端支持"前 8 字符匹配"——但目前没实现，所以改成弹窗让用户输完整 key
+  // 实际方案：列表里要把完整 api_key 存在 data-* 属性上，这里取
+  // 简化：直接 prompt 让用户输完整 key
+  const full = prompt("删除确认：请输入完整 API key（前端只显示前缀，要精确删除需完整 key）:");
+  if (!full) return;
+  try {
+    await adminFetch("/api/admin/users/" + encodeURIComponent(full), { method: "DELETE" });
+    adminMsg("已删除 " + prefix + "...（重启后生效）");
+    await loadUsers();
+  } catch (e) {
+    adminMsg("删除失败：" + e.message, true);
+  }
+}
+
+async function restartGateway() {
+  if (!confirm("重启 a2a-gateway 进程？会短暂中断正在进行的请求。\n\n注意：需要 docker-compose.yml 里 nodejs service 的 restart 策略为 'always'（默认是 on-failure:3，exit 0 不会拉起）。")) return;
+  try {
+    await adminFetch("/api/admin/system/restart", { method: "POST" });
+    $("#restartMsg").textContent = "退出中… 1-2s 后再访问 /health";
+    setTimeout(() => location.reload(), 3000);
+  } catch (e) {
+    $("#restartMsg").textContent = "重启失败：" + e.message;
+  }
+}
+
+// 页面加载时拉一次
+window.addEventListener("DOMContentLoaded", () => {
+  renderAdminTokenStatus();
+  loadAdminPanel();
+});
+</script>
+</body>
+</html>
