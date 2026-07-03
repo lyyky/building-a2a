@@ -210,6 +210,36 @@
 </head>
 <body>
 
+<!-- 引导页：检测到 BAI_USERNAME/BAI_PASSWORD 未配置时显示 -->
+<div id="bootstrapOverlay" style="display:none; position:fixed; inset:0; background:var(--bg); z-index:9999; padding:40px 20px; overflow:auto;">
+  <div style="max-width:520px; margin:60px auto; padding:32px 36px; background:var(--panel); border:1px solid var(--border); border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,0.25);">
+    <h2 style="margin:0 0 6px;">🚀 a2a-gateway 首次配置</h2>
+    <p class="muted" style="margin:0 0 20px; font-size:13px;">
+      检测到 <code>BAI_USERNAME</code> / <code>BAI_PASSWORD</code> 未配置。
+      a2a-gateway 需要 BuildingAI 账号密码才能登录拉取 agent / dataset 列表。
+    </p>
+    <div id="bootstrapStep1" style="margin-bottom:18px; padding:12px 14px; background:var(--accent-soft); border-radius:8px; font-size:13px;">
+      <strong>BuildingAI 状态：</strong><span id="bootstrapBaiStatus">检查中…</span>
+    </div>
+    <p style="font-size:13px; line-height:1.7; margin:0 0 18px;">
+      请填入 <strong>BuildingAI /install 时设的 root 账号</strong>用户名 + 密码：<br>
+      <span class="muted" style="font-size:11.5px;">（即首次访问 <code>http://&lt;server&gt;:4090/install</code> 时设的账号）</span>
+    </p>
+    <div style="margin-bottom:12px;">
+      <label style="display:block; font-size:12.5px; margin-bottom:4px;">用户名</label>
+      <input id="bsUser" type="text" placeholder="admin" autocomplete="username"
+             style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font-family:ui-monospace,monospace; box-sizing:border-box;" />
+    </div>
+    <div style="margin-bottom:18px;">
+      <label style="display:block; font-size:12.5px; margin-bottom:4px;">密码</label>
+      <input id="bsPass" type="password" autocomplete="current-password"
+             style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font-family:ui-monospace,monospace; box-sizing:border-box;" />
+    </div>
+    <button id="bsSubmit" onclick="submitBootstrap()" class="primary" style="width:100%; padding:10px; font-size:14px;">保存并自动重启</button>
+    <div id="bootstrapMsg" style="margin-top:14px; font-size:12.5px; min-height:18px;"></div>
+  </div>
+</div>
+
 <header class="top">
   <h1>A2A Gateway</h1>
   <span class="pill" id="env">loading…</span>
@@ -854,10 +884,99 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#btnRefresh").onclick = manualRefresh;
   $("#btnCopyBase").onclick = () => openMcpModal();
   setupMcpModal();
-  loadStatus().catch(e => alert("加载失败: " + e));
-  loadWhitelist().catch(e => console.warn("白名单加载失败", e));
-  setInterval(loadStatus, 8000);
+  // 先检测是否需要引导；需要则显示引导页，否则正常加载
+  checkBootstrap().then(needInit => {
+    if (needInit) return;  // 引导页接管
+    loadStatus().catch(e => alert("加载失败: " + e));
+    loadWhitelist().catch(e => console.warn("白名单加载失败", e));
+    setInterval(loadStatus, 8000);
+  });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// 引导页：检测 BAI_USERNAME/BAI_PASSWORD 是否需要配置
+// ─────────────────────────────────────────────────────────────────────────
+
+async function checkBootstrap() {
+  let s;
+  try {
+    const r = await fetch("/api/admin/init-status");
+    s = await r.json();
+  } catch (e) {
+    console.warn("init-status 请求失败，按非引导处理", e);
+    return false;
+  }
+  if (!s || !s.need_init) return false;
+
+  // 引导：显示覆盖层
+  $("#bootstrapOverlay").style.display = "block";
+
+  // BuildingAI 状态显示
+  const baiEl = $("#bootstrapBaiStatus");
+  if (s.bai_initialized) {
+    baiEl.innerHTML = "<span style='color:var(--ok);'>✓ 已初始化（root 账号已存在）</span>，可以填凭证";
+  } else {
+    baiEl.innerHTML = "<span style='color:var(--warn);'>⚠ BuildingAI 未初始化</span>，请先去 <code>http://&lt;server&gt;:4090/install</code> 完成建 root 账号，再回来填下面的表单";
+  }
+
+  // Enter 提交
+  $("#bsPass").addEventListener("keydown", e => { if (e.key === "Enter") submitBootstrap(); });
+  $("#bsUser").addEventListener("keydown", e => { if (e.key === "Enter") $("#bsPass").focus(); });
+
+  return true;
+}
+
+async function submitBootstrap() {
+  const user = ($("#bsUser").value || "").trim();
+  const pass = $("#bsPass").value || "";
+  const msg = $("#bootstrapMsg");
+  const btn = $("#bsSubmit");
+
+  if (!user || !pass) {
+    msg.innerHTML = "<span style='color:var(--warn);'>请同时填用户名和密码</span>";
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "保存中…";
+  msg.innerHTML = "<span class='muted'>正在验证凭证 + 写 .env + 重启…</span>";
+
+  try {
+    const r = await fetch("/api/admin/init-credentials", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bai_username: user, bai_password: pass }),
+    });
+    if (r.ok) {
+      msg.innerHTML = "<span style='color:var(--ok);'>✓ 凭证已保存，3 秒后自动刷新…</span>";
+      // 轮询直到 /health 恢复
+      let attempt = 0;
+      const probe = setInterval(async () => {
+        attempt++;
+        try {
+          const hr = await fetch("/health", { cache: "no-store" });
+          if (hr.ok) {
+            clearInterval(probe);
+            location.reload();  // 整页刷新，进入正常 UI
+          }
+        } catch (_) {}
+        if (attempt > 30) {  // 30s 兜底
+          clearInterval(probe);
+          msg.innerHTML += "<br><span style='color:var(--warn);'>仍未恢复，<a href='javascript:location.reload()'>手动刷新</a></span>";
+        }
+      }, 1000);
+    } else {
+      const body = await r.json().catch(() => ({}));
+      msg.innerHTML = `<span style='color:var(--err);'>✗ ${body.detail || r.statusText}</span>`;
+      btn.disabled = false;
+      btn.textContent = "保存并自动重启";
+    }
+  } catch (e) {
+    msg.innerHTML = `<span style='color:var(--err);'>✗ 网络错误：${e}</span>`;
+    btn.disabled = false;
+    btn.textContent = "保存并自动重启";
+  }
+}
 
 function setupMcpModal() {
   const modal = $("#mcpModal");

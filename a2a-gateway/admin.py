@@ -35,6 +35,8 @@ import mcp_whitelist
 import registry
 from config import (
     BAI_BASE,
+    BAI_PASSWORD,
+    BAI_USERNAME,
     DATASET_SCORE_THRESHOLD,
     DATASET_TOP_K,
     GATEWAY_HOST,
@@ -383,6 +385,92 @@ async def system_master_key(_: None = Depends(_verify_admin)) -> dict:
         "warning": "换 MASTER_KEY 后所有 A2A_GATEWAY_USERS 里的密文都失效，请重新加用户",
         "restart_required": True,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 引导凭证（Web UI 引导页用，无 admin token 也能调，限 bootstrap 阶段）
+# ─────────────────────────────────────────────────────────────────────────────
+
+import httpx as _httpx
+
+
+@router.get("/init-status")
+async def init_status() -> dict:
+    """Web UI 引导页检测用：是否需要引导用户填 BAI 凭证。
+
+    返回:
+      need_init: BAI_USERNAME/BAI_PASSWORD 是否未配置
+      bai_initialized: BuildingAI 是否已经 /install 完成（root 账号存在）
+    """
+    need_init = not (BAI_USERNAME and BAI_PASSWORD)
+    bai_initialized = True  # 默认 true 避免 isRoot 端点 5xx 时误报
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as c:
+            r = await c.get(f"{BAI_BASE}/api/system/isRoot")
+            if r.status_code == 200:
+                bai_initialized = bool(r.json().get("data", {}).get("isRoot"))
+            elif r.status_code in (401, 403):
+                # BuildingAI 在 root 不存在时返 401/403
+                bai_initialized = False
+    except Exception as exc:
+        log.warning("isRoot 检查失败: %s", exc)
+    return {"need_init": need_init, "bai_initialized": bai_initialized}
+
+
+class InitCredentialsPayload(BaseModel):
+    bai_username: str = Field(..., min_length=1)
+    bai_password: str = Field(..., min_length=1)
+
+
+@router.post("/init-credentials")
+async def init_credentials(payload: InitCredentialsPayload) -> dict:
+    """Web UI 引导页提交 root 凭证：验证 → 写 .env → 重启。
+
+    不要求 admin token（bootstrap 阶段还没设过）。
+    流程：
+      1. 试 login，验证凭证对
+      2. 写 .env (BAI_USERNAME/BAI_PASSWORD)
+      3. SIGTERM 触发 docker restart 拉起新进程
+    """
+    # 1. 验证 BuildingAI 能用这个 username/password 登录
+    try:
+        async with _httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.post(
+                f"{BAI_BASE}/api/auth/login",
+                json={
+                    "username": payload.bai_username,
+                    "password": payload.bai_password,
+                    "terminal": 1,
+                },
+            )
+    except Exception as exc:
+        raise HTTPException(502, f"连不上 BuildingAI: {exc}") from exc
+
+    if not (200 <= r.status_code < 300):
+        # 401 = 凭证错，其他 4xx/5xx = 服务异常
+        if r.status_code == 401:
+            raise HTTPException(401, "用户名或密码错，请重试")
+        raise HTTPException(502, f"BuildingAI 登录失败: {r.status_code}")
+
+    # 2. 写 .env
+    _update_env_file(
+        ENV_FILE,
+        {"BAI_USERNAME": payload.bai_username, "BAI_PASSWORD": payload.bai_password},
+    )
+    reload_user_keys(ENV_FILE)  # 顺手 reload，不影响（空 USERS 也没事）
+    log.info(
+        "引导完成：BAI_USERNAME=%s 凭证已写入 .env（即将重启）",
+        payload.bai_username,
+    )
+
+    # 3. SIGTERM 触发重启（延迟 200ms 让响应先回）
+    def _kill() -> None:
+        import time as _t
+        _t.sleep(0.2)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_kill, daemon=True).start()
+    return {"ok": True, "restarting": True, "message": "凭证已保存，3 秒后重连"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
