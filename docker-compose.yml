@@ -95,8 +95,6 @@ services:
             - /buildingai/packages/@buildingai/upgrade/node_modules
             - /buildingai/packages/@buildingai/utils/node_modules
             - /buildingai/packages/@buildingai/wechat-sdk/node_modules
-            # a2a-gateway 集成（指向宿主机 /root/a2a-gateway 的软链）
-            - ./a2a-gateway:/a2a-gateway
         ports:
             - "${SERVER_PORT:-4090}:${SERVER_PORT:-4090}"
         environment:
@@ -112,12 +110,6 @@ services:
             REDIS_HOST: redis
             REDIS_PORT: 6379
             REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-            # ── a2a-gateway 凭证（与 Web 端 /install 时设的 admin 账号密码一致）──
-            BAI_USERNAME: ${BAI_USERNAME:-}
-            BAI_PASSWORD: ${BAI_PASSWORD:-}
-            BAI_BASE: ${BAI_BASE:-http://localhost:4090}
-            GATEWAY_HOST: ${GATEWAY_HOST:-127.0.0.1}
-            GATEWAY_PORT: ${GATEWAY_PORT:-8000}
         command: |
             sh -c '
             set -e
@@ -145,21 +137,6 @@ services:
             fi
             fi
 
-            # ── 启动 a2a-gateway（容器内进程，与 BuildingAI 共用 127.0.0.1:8000）──
-            echo "🔌 Starting a2a-gateway..."
-            if [ -d /a2a-gateway ] && [ -f /a2a-gateway/requirements.txt ]; then
-              # 装依赖（带 break-system-packages 是因为镜像里是 Debian 系统 Python 3.11）
-              pip3 install --break-system-packages --quiet -r /a2a-gateway/requirements.txt 2>&1 | tail -3 || {
-                echo "⚠️ a2a-gateway pip install 失败（继续启动 BuildingAI）"
-              }
-              # 后台启动，日志进 /a2a-gateway.log（容器内 /a2a-gateway 目录可写）
-              nohup python3 -u /a2a-gateway/main.py > /a2a-gateway.log 2>&1 &
-              A2A_PID=$!
-              echo "   a2a-gateway PID=$A2A_PID（logs: /a2a-gateway.log）"
-            else
-              echo "   /a2a-gateway 未挂载或缺 requirements.txt，跳过"
-            fi
-
             echo "🎯 Starting BuildingAI..."
             exec pnpm start --no-daemon
             '
@@ -178,6 +155,53 @@ services:
             retries: 3
             start_period: 600s
 
+    a2a-gateway:
+        build:
+            context: ./a2a-gateway
+            dockerfile: Dockerfile
+        image: lyyky/building-a2a-a2a-gateway:local
+        container_name: buildingai-a2a-gateway${DOCKER_CONTAINER_SUFFIX:-}
+        restart: always
+        working_dir: /app
+        volumes:
+            # 源码（开发期便于本地改；生产可改为 image 自身带）
+            - ./a2a-gateway:/app
+            # mcp_whitelist.json 持久化（容器重建不丢）
+            - a2a-gateway-data:/app/data
+        ports:
+            - "${GATEWAY_PORT:-8000}:${GATEWAY_PORT:-8000}"
+        environment:
+            TZ: Asia/Shanghai
+            # BuildingAI 内网地址（docker network 内 DNS 解析 nodejs → nodejs 容器）
+            BAI_BASE: ${BAI_BASE:-http://nodejs:4090}
+            # 跟 Web 端 /install 时设的 root 账号密码一致
+            BAI_USERNAME: ${BAI_USERNAME:-}
+            BAI_PASSWORD: ${BAI_PASSWORD:-}
+            # a2a-gateway 监听（容器内 0.0.0.0 让外部端口能进来）
+            GATEWAY_HOST: ${GATEWAY_HOST:-0.0.0.0}
+            GATEWAY_PORT: ${GATEWAY_PORT:-8000}
+            # admin UI 鉴权（openssl rand -hex 32）
+            A2A_ADMIN_TOKEN: ${A2A_ADMIN_TOKEN:-}
+            # 多用户：Fernet 密钥 + 用户映射（web UI 里可改）
+            A2A_GATEWAY_MASTER_KEY: ${A2A_GATEWAY_MASTER_KEY:-}
+            A2A_GATEWAY_USERS: ${A2A_GATEWAY_USERS:-}
+        networks:
+            - buildingai-network
+        <<: *resource-config
+        depends_on:
+            nodejs:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://127.0.0.1:${GATEWAY_PORT:-8000}/health', timeout=3).raise_for_status()\" || exit 1"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 120s
+
 networks:
     buildingai-network:
         driver: bridge
+
+volumes:
+    a2a-gateway-data:
+        driver: local
