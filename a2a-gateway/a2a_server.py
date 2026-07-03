@@ -554,21 +554,28 @@ async def a2a_dataset_endpoint(
     if code >= 400:
         return _err(req_id, -32000, f"retrieve failed: {resp}")
 
-    # BuildingAI 实际响应：{code, message, data: {records: [{segment: {...}, score}, ...], total}}
+    # BuildingAI 实际响应：{code, message, data: {chunks: [{id, content, score, fileName, ...}], totalTime}}
+    # 旧版本字段名是 records，兼容一下。
     records: list[dict] = []
     if isinstance(resp, dict):
         data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
-        records = data.get("records") or []
+        records = data.get("chunks") or data.get("records") or []
     segments_parts = []
     for rec in records:
+        # chunks 版本字段是扁平的（id/content/score/fileName 在同一层）；
+        # records 版本嵌套 segment 子对象。两种都兼容。
         seg = (rec.get("segment") or {}) if isinstance(rec, dict) else {}
+        content = seg.get("content") if seg.get("content") else rec.get("content", "")
+        doc_name = (seg.get("documentName") or seg.get("document_name")
+                    or rec.get("fileName") or rec.get("file_name") or "")
+        score = rec.get("score")
         segments_parts.append(
             {
                 "kind": "data",
                 "data": {
-                    "documentName": seg.get("documentName") or seg.get("document_name"),
-                    "content": seg.get("content", ""),
-                    "score": rec.get("score"),
+                    "documentName": doc_name,
+                    "content": content,
+                    "score": score,
                 },
             }
         )
