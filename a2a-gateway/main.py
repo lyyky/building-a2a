@@ -33,16 +33,21 @@ log = logging.getLogger("a2a.main")
 
 
 async def _wait_for_buildingai_up() -> None:
-    """轮询 BuildingAI 公开端点（不需要鉴权），确认 NestJS 已就绪。
+    """轮询 BuildingAI 端点，确认 NestJS 已就绪。
+
     用于同容器部署：a2a-gateway 跟 BuildingAI 先后启动时，先等 BuildingAI listening。
+
+    BuildingAI 的 /consoleapi/system/runtime 在 /install 完成后返 401（要鉴权），
+    200 在 /install 之前。两者都说明 server 起来了。
+    5xx / connection refused 才是真的没起。
     """
     log.info("等待 BuildingAI 启动（GET %s/consoleapi/system/runtime）...", BAI_BASE)
     while True:
         try:
             async with httpx.AsyncClient(timeout=5.0) as c:
                 r = await c.get(f"{BAI_BASE}/consoleapi/system/runtime")
-                if r.status_code == 200:
-                    log.info("BuildingAI 已就绪")
+                if r.status_code in (200, 401, 403):
+                    log.info("BuildingAI 已就绪（status=%d）", r.status_code)
                     return
         except Exception:
             pass

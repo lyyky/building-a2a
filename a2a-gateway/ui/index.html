@@ -911,14 +911,6 @@ async function checkBootstrap() {
   // 引导：显示覆盖层
   $("#bootstrapOverlay").style.display = "block";
 
-  // BuildingAI 状态显示
-  const baiEl = $("#bootstrapBaiStatus");
-  if (s.bai_initialized) {
-    baiEl.innerHTML = "<span style='color:var(--ok);'>✓ 已初始化（root 账号已存在）</span>，可以填凭证";
-  } else {
-    baiEl.innerHTML = "<span style='color:var(--warn);'>⚠ BuildingAI 未初始化</span>，请先去 <code>http://&lt;server&gt;:4090/install</code> 完成建 root 账号，再回来填下面的表单";
-  }
-
   // Enter 提交
   $("#bsPass").addEventListener("keydown", e => { if (e.key === "Enter") submitBootstrap(); });
   $("#bsUser").addEventListener("keydown", e => { if (e.key === "Enter") $("#bsPass").focus(); });
@@ -948,23 +940,9 @@ async function submitBootstrap() {
       body: JSON.stringify({ bai_username: user, bai_password: pass }),
     });
     if (r.ok) {
-      msg.innerHTML = "<span style='color:var(--ok);'>✓ 凭证已保存，3 秒后自动刷新…</span>";
-      // 轮询直到 /health 恢复
-      let attempt = 0;
-      const probe = setInterval(async () => {
-        attempt++;
-        try {
-          const hr = await fetch("/health", { cache: "no-store" });
-          if (hr.ok) {
-            clearInterval(probe);
-            location.reload();  // 整页刷新，进入正常 UI
-          }
-        } catch (_) {}
-        if (attempt > 30) {  // 30s 兜底
-          clearInterval(probe);
-          msg.innerHTML += "<br><span style='color:var(--warn);'>仍未恢复，<a href='javascript:location.reload()'>手动刷新</a></span>";
-        }
-      }, 1000);
+      msg.innerHTML = "<span style='color:var(--ok);'>✓ 凭证已保存并立即生效</span><br><span class='muted'>2 秒后自动刷新…</span>";
+      // 凭证已写入 + 进程内已生效（不重启），等 2s 让 registry 拉一次 agent 列表后 reload
+      setTimeout(() => location.reload(), 2000);
     } else {
       const body = await r.json().catch(() => ({}));
       msg.innerHTML = `<span style='color:var(--err);'>✗ ${body.detail || r.statusText}</span>`;

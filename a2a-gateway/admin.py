@@ -93,18 +93,19 @@ def _parse_env_file(path: Path) -> dict[str, str]:
 
 
 def _update_env_file(path: Path, updates: dict[str, str]) -> None:
-    """原子更新 .env（保留顺序 / 注释）。
+    """更新 .env（保留顺序 / 注释）。
 
     - 已存在的 key 替换值
     - 不存在的 key 追加到末尾
-    - 写 .env.tmp 然后 rename（防半写）
-    """
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(f"{k}={v}" for k, v in updates.items()) + "\n", encoding="utf-8")
-        return
 
-    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    bind mount 兼容：
+      docker bind mount 上的 .env 不能 rename/unlink（host 上的 docker daemon
+      一直持有 fd，Errno 16 EBUSY）。改用 open(O_TRUNC|O_WRONLY) 直接覆盖原文件
+      —— 不开新 inode，不会触发 EBUSY。
+    """
+    lines: list[str] = []
+    if path.exists():
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
     seen: set[str] = set()
     new_lines: list[str] = []
     for line in lines:
@@ -121,9 +122,14 @@ def _update_env_file(path: Path, updates: dict[str, str]) -> None:
     for k, v in updates.items():
         if k not in seen:
             new_lines.append(f"{k}={v}")
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    new_content = "\n".join(new_lines) + "\n"
+
+    # bind mount 上 rename/unlink 都 EBUSY；用 O_TRUNC 直接覆盖原 fd
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+    try:
+        os.write(fd, new_content.encode("utf-8"))
+    finally:
+        os.close(fd)
     log.info(".env 已更新：%s", list(updates.keys()))
 
 
@@ -400,21 +406,19 @@ async def init_status() -> dict:
 
     返回:
       need_init: BAI_USERNAME/BAI_PASSWORD 是否未配置
-      bai_initialized: BuildingAI 是否已经 /install 完成（root 账号存在）
+
+    说明：BuildingAI 没有可靠的"是否已 init"端点：
+      - /api/system/initialize (GET) 是 NestJS catch-all，返 HTML
+      - /api/system/isRoot 不存在
+      - /api/system/runtime 要鉴权
+      - dictService.get("isInitialized") 永远 false（BuildingAI /install 没设）
+    所以本端点只返 need_init。UI 不再提示 "BuildingAI 未初始化"（不准确）。
     """
-    need_init = not (BAI_USERNAME and BAI_PASSWORD)
-    bai_initialized = True  # 默认 true 避免 isRoot 端点 5xx 时误报
-    try:
-        async with _httpx.AsyncClient(timeout=5.0) as c:
-            r = await c.get(f"{BAI_BASE}/api/system/isRoot")
-            if r.status_code == 200:
-                bai_initialized = bool(r.json().get("data", {}).get("isRoot"))
-            elif r.status_code in (401, 403):
-                # BuildingAI 在 root 不存在时返 401/403
-                bai_initialized = False
-    except Exception as exc:
-        log.warning("isRoot 检查失败: %s", exc)
-    return {"need_init": need_init, "bai_initialized": bai_initialized}
+    # 注意：不要用顶部 import 的 BAI_USERNAME（缓存值），要直接读 config 模块，
+    # 否则 init-credentials 写完 .env 后 init-status 仍会返 need_init=true
+    import config as _config
+    need_init = not (_config.BAI_USERNAME and _config.BAI_PASSWORD)
+    return {"need_init": need_init}
 
 
 class InitCredentialsPayload(BaseModel):
@@ -458,19 +462,30 @@ async def init_credentials(payload: InitCredentialsPayload) -> dict:
         {"BAI_USERNAME": payload.bai_username, "BAI_PASSWORD": payload.bai_password},
     )
     reload_user_keys(ENV_FILE)  # 顺手 reload，不影响（空 USERS 也没事）
-    log.info(
-        "引导完成：BAI_USERNAME=%s 凭证已写入 .env（即将重启）",
-        payload.bai_username,
-    )
 
-    # 3. SIGTERM 触发重启（延迟 200ms 让响应先回）
-    def _kill() -> None:
-        import time as _t
-        _t.sleep(0.2)
-        os.kill(os.getpid(), signal.SIGTERM)
+    # 3. 进程内立即生效：更新 os.environ + config 模块全局 + 重置 bai() 单例
+    #    config.BAI_USERNAME/PASSWORD 是模块级变量（import 时读一次），只改 os.environ 没用
+    #    下次 bai() 调用会重新读 config 全局建 BuildingAIClient，自动 login
+    os.environ["BAI_USERNAME"] = payload.bai_username
+    os.environ["BAI_PASSWORD"] = payload.bai_password
+    import config as _config
+    _config.BAI_USERNAME = payload.bai_username
+    _config.BAI_PASSWORD = payload.bai_password
+    _config._bai = None  # noqa: SLF001（清掉旧单例）
 
-    threading.Thread(target=_kill, daemon=True).start()
-    return {"ok": True, "restarting": True, "message": "凭证已保存，3 秒后重连"}
+    # 4. 触发一次 registry 刷新（异步，不阻塞响应）
+    import asyncio
+    async def _kick() -> None:
+        try:
+            await asyncio.sleep(0.3)  # 让响应先回
+            await registry.refresh_once()
+            log.info("引导完成 + registry 刷新：agents=%d, datasets=%d",
+                     len(registry.all_agents()), len(registry.all_datasets()))
+        except Exception as exc:
+            log.warning("引导后刷新失败: %s", exc)
+    asyncio.create_task(_kick())
+
+    return {"ok": True, "restarting": False, "message": "凭证已保存并立即生效"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

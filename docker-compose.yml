@@ -166,6 +166,9 @@ services:
         volumes:
             # 源码（开发期便于本地改；生产可改为 image 自身带）
             - ./a2a-gateway:/app
+            # 宿主 .env 挂到容器（让 init-credentials 写宿主 .env 跟 docker-compose 启动读的是同一个）
+            # 注意：:rw 才有意义，否则 init-credentials 写不进去。admin.py 用原子写（.tmp + rename）避免半写
+            - ./.env:/app/host.env
             # mcp_whitelist.json 持久化（容器重建不丢）
             - a2a-gateway-data:/app/data
         ports:
@@ -185,6 +188,8 @@ services:
             # 多用户：Fernet 密钥 + 用户映射（web UI 里可改）
             A2A_GATEWAY_MASTER_KEY: ${A2A_GATEWAY_MASTER_KEY:-}
             A2A_GATEWAY_USERS: ${A2A_GATEWAY_USERS:-}
+            # 引导页 init-credentials 写 .env 的目标（必须挂上面那个 volume 才有意义）
+            A2A_GATEWAY_ENV_FILE: /app/host.env
         networks:
             - buildingai-network
         <<: *resource-config
