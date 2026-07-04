@@ -17,6 +17,8 @@ storage/*
 .env.test.local
 .env.production.local
 /logs/
+# a2a-gateway 容器内 bind mount 出来的 .env 副本（含 A2A_ADMIN_TOKEN 等敏感）
+/a2a-gateway/host.env
 
 # Testing
 coverage

@@ -172,7 +172,8 @@ services:
             # mcp_whitelist.json 持久化（容器重建不丢）
             - a2a-gateway-data:/app/data
         ports:
-            - "${GATEWAY_PORT:-8000}:${GATEWAY_PORT:-8000}"
+            # 只 bind 到 127.0.0.1:外网摸不到。BuildingAI 内部访问走 docker DNS (buildingai-a2a-gateway:8000) 不受影响
+            - "127.0.0.1:${GATEWAY_PORT:-8000}:${GATEWAY_PORT:-8000}"
         environment:
             TZ: Asia/Shanghai
             # BuildingAI 内网地址（docker network 内 DNS 解析 nodejs → nodejs 容器）
