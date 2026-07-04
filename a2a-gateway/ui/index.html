@@ -243,6 +243,7 @@
 <header class="top">
   <h1>A2A Gateway</h1>
   <span class="pill" id="env">loading…</span>
+  <span class="pill" id="modeBadge" style="display:none; background:#fef3c7; color:#92400e; font-weight:600;">单用户模式</span>
   <span class="spacer"></span>
   <span id="lastRefresh" class="muted">最后刷新：—</span>
   <button id="btnRefresh" class="primary">↻ 立即刷新 registry</button>
@@ -309,10 +310,14 @@
 
     <!-- 多用户 & 系统配置面板（独立于 #detail，避开 render 清空） -->
     <div class="panel">
-      <h4>多用户 &amp; 系统配置</h4>
+      <h4>系统配置</h4>
       <p class="muted" style="margin:0 0 10px;">
         管理 a2a-gateway 调 BuildingAI 的账号（每个 API key 一个 BuildingAI 用户）。
         改完要 <strong>重启 a2a-gateway</strong> 生效。
+      </p>
+      <p id="singleUserHint" style="display:none; margin:0 0 10px; padding:8px 10px; background:#fef3c7; border-left:3px solid #d97706; border-radius:4px; color:#92400e; font-size:12.5px; line-height:1.5;">
+        ℹ️ <strong>当前单用户模式</strong>：所有 <code>/a2a/*</code> 调用都走 <code>BAI_USERNAME</code> 身份
+        （下方"用户池"里配的 key 不会被路由，仅作未来接入外部 A2A 客户端时启用）。
       </p>
 
       <!-- Admin Token 状态条 -->
@@ -410,25 +415,6 @@
 
 <script>
 const $ = (sel) => document.querySelector(sel);
-
-// 试聊用 api_key：单用户模式随便填；多用户模式必须是已配置的 key。
-// sessionStorage 存（关 tab 失效，不持久化）。
-const TRIAL_KEY_STORAGE = "a2a_trial_api_key";
-function getTrialApiKey() {
-  let k = sessionStorage.getItem(TRIAL_KEY_STORAGE);
-  if (k) return k;
-  // 第一次弹窗问；单用户模式提示填任意字符串
-  k = prompt(
-    "试聊需要 API key。\n" +
-    "• 单用户模式（没配 A2A_GATEWAY_USERS）：填任意非空字符串即可。\n" +
-    "• 多用户模式：填 admin 面板「已配置用户」里的 api_key。\n" +
-    "（仅本 tab 有效，关 tab 失效）"
-  );
-  if (!k || !k.trim()) return null;
-  k = k.trim();
-  sessionStorage.setItem(TRIAL_KEY_STORAGE, k);
-  return k;
-}
 const el = (tag, attrs = {}, ...children) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -449,7 +435,19 @@ let STATE = { status: null, selected: null, _lastRenderedSel: null };
 async function loadStatus() {
   const r = await fetch("/api/admin/status");
   STATE.status = await r.json();
+  applyModeBadge(STATE.status.mode);
   render();
+}
+
+function applyModeBadge(mode) {
+  // mode === "single" → 单用户：所有 /a2a/* 走 BAI_USERNAME 身份
+  // mode === "multi"  → 多用户：读 Authorization
+  // 字段由后端 a2a_server.verify_caller 决定，跟 USER_KEYS 是否为空无关
+  const isSingle = mode === "single";
+  const pill = $("#modeBadge");
+  const hint = $("#singleUserHint");
+  if (pill) pill.style.display = isSingle ? "inline-block" : "none";
+  if (hint) hint.style.display = isSingle ? "block" : "none";
 }
 
 async function manualRefresh() {
@@ -669,8 +667,6 @@ function renderRetrievePanel(ds) {
 async function sendChat(agent, ta, streamEl, btnEl, useStream = false) {
   const text = ta.value.trim();
   if (!text) return;
-  const apiKey = getTrialApiKey();
-  if (!apiKey) return;  // 弹窗已开
   btnEl.disabled = true;
   streamEl.innerHTML = "";
   streamEl.textContent = "请求中…";
@@ -682,10 +678,7 @@ async function sendChat(agent, ta, streamEl, btnEl, useStream = false) {
   try {
     const r = await fetch(`/a2a/agents/${agent.id}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + apiKey,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     const ct = (r.headers.get("content-type") || "").toLowerCase();
@@ -764,8 +757,6 @@ function appendSSEFrame(streamEl, frame) {
 async function sendRetrieve(ds, ta, streamEl, btnEl) {
   const text = ta.value.trim();
   if (!text) return;
-  const apiKey = getTrialApiKey();
-  if (!apiKey) return;  // 弹窗已开
   btnEl.disabled = true;
   streamEl.innerHTML = "";
   streamEl.textContent = "请求中…";
@@ -775,12 +766,7 @@ async function sendRetrieve(ds, ta, streamEl, btnEl) {
   };
   try {
     const r = await fetch(`/a2a/datasets/${ds.id}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + apiKey,
-      },
-      body: JSON.stringify(payload)
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
     });
     const j = await r.json();
     streamEl.innerHTML = "";
@@ -1071,15 +1057,11 @@ function getAdminToken() {
   return localStorage.getItem(ADMIN_TOKEN_KEY) || "";
 }
 
-// 防止 401 弹窗被 cancel 后又无限弹
-let _adminTokenPromptShown = false;
-
 function setAdminToken() {
   const cur = getAdminToken();
   const t = prompt("请输入 Admin Token（环境变量 A2A_ADMIN_TOKEN 的值）:", cur);
   if (t === null) return;
   localStorage.setItem(ADMIN_TOKEN_KEY, t);
-  _adminTokenPromptShown = false;  // 设了之后允许下次再弹
   renderAdminTokenStatus();
   loadAdminPanel();  // 重新加载
 }
@@ -1089,47 +1071,13 @@ function renderAdminTokenStatus() {
   $("#adminTokenStatus").textContent = t ? "已设置（" + t.slice(0, 6) + "..." + "）" : "未设置";
 }
 
-function ensureAdminToken() {
-  // 如果 Admin Token 未设置或设错，弹窗引导用户输入。返回最终 token。
-  let t = getAdminToken();
-  if (t) return t;
-  if (_adminTokenPromptShown) return t;  // 已经在弹了，别递归
-  _adminTokenPromptShown = true;
-  setAdminToken();
-  t = getAdminToken();
-  _adminTokenPromptShown = false;
-  return t;
-}
-
 async function adminFetch(url, opts = {}) {
   const headers = opts.headers ? { ...opts.headers } : {};
-  let t = getAdminToken();
-  if (!t) t = ensureAdminToken();
+  const t = getAdminToken();
   if (t) headers["X-Admin-Token"] = t;
-  let r = await fetch(url, { ...opts, headers });
-  // 401 且 token 存在 → token 错了，弹窗让用户重设，重试一次
-  if (r.status === 401 && t) {
-    const body = await r.text().catch(() => "");
-    // 后端没 token（v1 ADMIN_TOKEN_REQUIRED）时 body 是 "missing"；
-    // 有 token 但错时 body 是 "invalid"。两种都让用户重试。
-    if (body.includes("missing") || body.includes("invalid") || body === "") {
-      if (!_adminTokenPromptShown) {
-        _adminTokenPromptShown = true;
-        const ok = confirm("Admin Token 错或失效，要重新设置吗？\n（点取消后底部「adminMsg」会显示错误）");
-        _adminTokenPromptShown = false;
-        if (ok) {
-          setAdminToken();
-          t = getAdminToken();
-          if (t) {
-            headers["X-Admin-Token"] = t;
-            r = await fetch(url, { ...opts, headers });
-          }
-        }
-      }
-    }
-  }
+  const r = await fetch(url, { ...opts, headers });
   if (r.status === 401) {
-    $("#adminMsg").textContent = "401: Admin Token 错或未配（点上方 🔑 旁的「设置」按钮，或刷新页面在引导弹窗里设）";
+    $("#adminMsg").textContent = "401: Admin Token 错或未配（点上方「设置」按钮）";
     throw new Error("401 unauthorized");
   }
   if (!r.ok) {
@@ -1314,13 +1262,6 @@ async function restartGateway() {
 // 页面加载时拉一次
 window.addEventListener("DOMContentLoaded", () => {
   renderAdminTokenStatus();
-  // 没设 Admin Token 就主动弹窗引导（不要等 fetch 401 才发现）
-  if (!getAdminToken()) {
-    // 延迟一下，避免和引导页/其他 modal 抢焦点
-    setTimeout(() => {
-      if (!getAdminToken()) setAdminToken();
-    }, 800);
-  }
   loadAdminPanel();
 });
 </script>

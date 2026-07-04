@@ -31,7 +31,6 @@ from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-import config
 import mcp_whitelist
 import registry
 from config import (
@@ -40,17 +39,14 @@ from config import (
     BAI_USERNAME,
     DATASET_SCORE_THRESHOLD,
     DATASET_TOP_K,
-    ENV_FILE,
     GATEWAY_HOST,
     GATEWAY_PORT,
     POLL_INTERVAL,
+    USER_KEYS,
     bai,
     reload_user_keys,
     user_pool as _user_pool,
 )
-# 注意：不要 `from config import USER_KEYS` —— 那会在 import 时绑定一次 dict 引用，
-# reload_user_keys() 用 `USER_KEYS = 新dict` 改的是 config 模块全局变量，
-# admin.py 本地引用还指向旧 dict，永远读不到新值。要用 `config.USER_KEYS`（属性访问）。
 
 log = logging.getLogger("a2a.admin")
 
@@ -62,6 +58,8 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 # ─────────────────────────────────────────────────────────────────────────────
 
 ADMIN_TOKEN: str | None = os.getenv("A2A_ADMIN_TOKEN")
+# .env 文件路径（A2A_GATEWAY_ENV_FILE 配时用，否则跟 a2a-gateway 同目录）
+ENV_FILE: Path = Path(os.getenv("A2A_GATEWAY_ENV_FILE", str(Path(__file__).parent / ".env"))).resolve()
 
 
 async def _verify_admin(x_admin_token: str | None = Header(default=None)) -> None:
@@ -142,6 +140,10 @@ async def status() -> dict:
     return {
         "ok": True,
         "now": time.time(),
+        # 当前路由模式：v0.2.0+ 默认单用户（verify_caller 走 _global_caller，
+        # 不读 Authorization，不读 USER_KEYS）。
+        # 未来接外部 A2A 客户端、恢复多用户 verify_caller 时改成 "multi"。
+        "mode": "single",
         "buildingai": {
             "base": BAI_BASE,
             "logged_in": bai()._logged_in,  # noqa: SLF001（内部字段只读状态）
@@ -206,7 +208,7 @@ async def list_users() -> dict:
     pool = _user_pool()
     by_key = {c.api_key: c for c in pool._by_key.values()}  # noqa: SLF001
     return {
-        "total_configured": len(config.USER_KEYS),
+        "total_configured": len(USER_KEYS),
         "active_logged_in": sum(1 for c in by_key.values() if c.client._logged_in),  # noqa: SLF001
         "items": [
             {
@@ -214,7 +216,7 @@ async def list_users() -> dict:
                 "username": v["username"],
                 "logged_in": k in by_key and by_key[k].client._logged_in,  # noqa: SLF001
             }
-            for k, v in config.USER_KEYS.items()
+            for k, v in USER_KEYS.items()
         ],
     }
 

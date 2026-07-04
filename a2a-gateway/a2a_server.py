@@ -23,15 +23,15 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 import registry
 from admin import router as admin_router
-from config import GATEWAY_HOST, GATEWAY_PORT, bai
-from config import Caller, user_pool as _user_pool_singleton
+from config import GATEWAY_HOST, GATEWAY_PORT, bai, BAI_USERNAME
+from config import Caller
 
 log = logging.getLogger("a2a.server")
 
@@ -40,23 +40,29 @@ app.include_router(admin_router)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 多用户鉴权：每个外部调用方带自己的 API key
+# 单用户鉴权：当前部署没有外部 A2A 客户端，所有 /a2a/* 走 BAI_USERNAME 身份。
+# 多用户机制（config.py / admin.py 里的 UserPool / USER_KEYS）保留不动，
+# 未来要接外部 client 时把 verify_caller 恢复成读 Authorization 即可。
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def verify_caller(authorization: str | None = Header(default=None)) -> Caller:
-    """FastAPI Depends：从 Authorization: Bearer sk-... 拿 key，验过后返回 Caller。
+_global_caller_singleton: Caller | None = None
 
-    失败统一抛 401。如果 A2A_GATEWAY_USERS 是空的（无多用户配置），全部 key 都返回 None。
-    """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(401, "missing Authorization: Bearer <api_key>")
-    api_key = authorization[7:].strip()
-    if not api_key:
-        raise HTTPException(401, "empty api key")
-    caller = await _user_pool_singleton().get(api_key)
-    if caller is None:
-        raise HTTPException(401, "invalid api key or login failed")
-    return caller
+
+def _global_caller() -> Caller:
+    """懒加载一个全局 admin Caller（client=bai()，自动登录）。"""
+    global _global_caller_singleton
+    if _global_caller_singleton is None:
+        _global_caller_singleton = Caller(
+            api_key="single-user",
+            username=BAI_USERNAME or "admin",
+            client=bai(),
+        )
+    return _global_caller_singleton
+
+
+def verify_caller() -> Caller:
+    """FastAPI Depends：单用户模式，所有 /a2a/* 端点放行，返回全局 admin Caller。"""
+    return _global_caller()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -554,28 +560,21 @@ async def a2a_dataset_endpoint(
     if code >= 400:
         return _err(req_id, -32000, f"retrieve failed: {resp}")
 
-    # BuildingAI 实际响应：{code, message, data: {chunks: [{id, content, score, fileName, ...}], totalTime}}
-    # 旧版本字段名是 records，兼容一下。
+    # BuildingAI 实际响应：{code, message, data: {records: [{segment: {...}, score}, ...], total}}
     records: list[dict] = []
     if isinstance(resp, dict):
         data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
-        records = data.get("chunks") or data.get("records") or []
+        records = data.get("records") or []
     segments_parts = []
     for rec in records:
-        # chunks 版本字段是扁平的（id/content/score/fileName 在同一层）；
-        # records 版本嵌套 segment 子对象。两种都兼容。
         seg = (rec.get("segment") or {}) if isinstance(rec, dict) else {}
-        content = seg.get("content") if seg.get("content") else rec.get("content", "")
-        doc_name = (seg.get("documentName") or seg.get("document_name")
-                    or rec.get("fileName") or rec.get("file_name") or "")
-        score = rec.get("score")
         segments_parts.append(
             {
                 "kind": "data",
                 "data": {
-                    "documentName": doc_name,
-                    "content": content,
-                    "score": score,
+                    "documentName": seg.get("documentName") or seg.get("document_name"),
+                    "content": seg.get("content", ""),
+                    "score": rec.get("score"),
                 },
             }
         )
