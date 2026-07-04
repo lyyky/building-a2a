@@ -560,24 +560,41 @@ async def a2a_dataset_endpoint(
     if code >= 400:
         return _err(req_id, -32000, f"retrieve failed: {resp}")
 
-    # BuildingAI 实际响应：{code, message, data: {records: [{segment: {...}, score}, ...], total}}
-    records: list[dict] = []
+    # BuildingAI 实际响应 schema（1.15+）：
+    #   {code, message, data: {chunks: [{id, content, score, chunkIndex,
+    #                                    contentLength, fileName, metadata}, ...], total}}
+    # 老 Dify 风格 schema（部分版本/老 API 还可能返）：
+    #   data: {records: [{segment: {documentName, content, ...}, score}, ...]}
+    # 优先 chunks，回退 records（防 BuildingAI 切回老 schema）。
+    segments_parts = []
     if isinstance(resp, dict):
         data = resp.get("data") if isinstance(resp.get("data"), dict) else {}
+        chunks = data.get("chunks") or []
         records = data.get("records") or []
-    segments_parts = []
-    for rec in records:
-        seg = (rec.get("segment") or {}) if isinstance(rec, dict) else {}
-        segments_parts.append(
-            {
-                "kind": "data",
-                "data": {
-                    "documentName": seg.get("documentName") or seg.get("document_name"),
-                    "content": seg.get("content", ""),
-                    "score": rec.get("score"),
-                },
-            }
-        )
+        for ch in chunks:
+            segments_parts.append(
+                {
+                    "kind": "data",
+                    "data": {
+                        "documentName": ch.get("fileName"),
+                        "content": ch.get("content", ""),
+                        "score": ch.get("score"),
+                        "chunkIndex": ch.get("chunkIndex"),
+                    },
+                }
+            )
+        for rec in records:
+            seg = (rec.get("segment") or {}) if isinstance(rec, dict) else {}
+            segments_parts.append(
+                {
+                    "kind": "data",
+                    "data": {
+                        "documentName": seg.get("documentName") or seg.get("document_name"),
+                        "content": seg.get("content", ""),
+                        "score": rec.get("score"),
+                    },
+                }
+            )
     summary_text = f"找到 {len(segments_parts)} 个相关片段"
     parts = [{"kind": "text", "text": summary_text}, *segments_parts]
     return _ok(
