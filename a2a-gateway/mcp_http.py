@@ -187,11 +187,19 @@ from mcp.server.transport_security import TransportSecurityMiddleware as _TSM  #
 _orig_validate = _TSM._validate_host
 
 
+# Loopback 系列（127.0.0.1 / localhost / [::1]）作为内置兜底：
+# 不需要走 mcp_whitelist 配置——浏览器/SSH 隧道本机访问的 host header 天然就是 loopback，
+# 而 loopback 在容器外的 a2a-gateway 端口绑 127.0.0.1 这条防御链上已是安全默认。
+# mcp_whitelist 只需要列出"额外需要放行的非 loopback 容器内 host"（如 buildingai-a2a-gateway:8000）。
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
+
+
 def _patched_validate_host(self, host):  # noqa: ANN001
-    """Runtime-aware version that always reads from mcp_whitelist."""
+    """Runtime-aware: mcp_whitelist（非 loopback 容器 host）+ loopback 内置兜底。"""
     if not host:
         log.warning("Missing Host header in request")
         return False
+    # 1) 运行时白名单（精确匹配 + 通配端口）
     allowed = mcp_whitelist._allowed  # noqa: SLF001
     if host in allowed:
         return True
@@ -200,6 +208,11 @@ def _patched_validate_host(self, host):  # noqa: ANN001
             base = pattern[:-2]
             if host.startswith(base + ":"):
                 return True
+    # 2) Loopback 兜底（host[:port] 的 base 在 loopback 集合内即放行）
+    if ":" in host:
+        base = host.rsplit(":", 1)[0]
+        if base in _LOOPBACK_HOSTS:
+            return True
     log.warning(f"Invalid Host header: {host}")
     return False
 
