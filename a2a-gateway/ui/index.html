@@ -397,12 +397,20 @@
       <label>URL</label>
       <input id="mcpCmd" type="text" readonly />
     </div>
+    <div class="field">
+      <label>内部 URL</label>
+      <input id="mcpInternalBase" type="text" placeholder="http://buildingai-a2a-gateway:8000"
+             style="font-family:ui-monospace,monospace; font-size:13px;" />
+    </div>
 
     <textarea id="mcpFull" class="copy-area" readonly></textarea>
 
-    <div style="margin-top:10px; padding:8px 10px; background: var(--accent-soft); border-radius: 6px; font-size:12px; color: var(--muted);">
-      <strong>说明：</strong>把 gateway 进程跑在同一台 BuildingAI 可访问的机器上，
-      URL 内的 localhost 指 gateway 所在机器的 hostname。
+    <div style="margin-top:10px; padding:8px 10px; background: var(--accent-soft); border-radius: 6px; font-size:12px; color: var(--muted); line-height:1.6;">
+      <strong>说明：</strong>"内部 URL" 是 <strong>BuildingAI 在容器里访问 gateway 的地址</strong>
+      （docker compose 默认 <code>buildingai-a2a-gateway:8000</code>，如果你的 service 名不同，
+      改成 <code>http://&lt;service-name&gt;:8000</code>）。<br>
+      <span style="color:var(--warn);">⚠️</span> 不要用 <code>127.0.0.1</code> / <code>localhost</code>——
+      那指向 BuildingAI 容器自己，访问不到 gateway。
     </div>
 
     <div class="modal-actions">
@@ -979,26 +987,44 @@ function setupMcpModal() {
   const status = $("#mcpCopyStatus");
   const btn = $("#mcpModeStreamable");
   const btn2 = $("#mcpModeSse");
+  const internalBase = $("#mcpInternalBase");
+
+  function internalUrl() {
+    // 优先用户输入，否则按 docker compose 默认 service 名兜底
+    const v = (internalBase.value || "").trim();
+    if (v) return v.replace(/\/+$/, "");
+    return "http://buildingai-a2a-gateway:8000";
+  }
 
   function setMode(mode) {
+    const base = internalUrl();
     if (mode === "sse") {
       $("#mcpType").value = "sse";
-      $("#mcpCmd").value = `${location.protocol}//${location.host}/mcp-sse/sse`;
+      $("#mcpCmd").value = `${base}/mcp-sse/sse`;
       full.value =
         "名称: a2a-gateway\n" +
         "通信方式: sse\n" +
-        `URL: ${location.protocol}//${location.host}/mcp-sse/sse`;
+        `URL: ${base}/mcp-sse/sse`;
       btn.classList.remove("primary"); btn2.classList.add("primary");
     } else {
       $("#mcpType").value = "streamable-http";
-      $("#mcpCmd").value = `${location.protocol}//${location.host}/mcp/`;
+      $("#mcpCmd").value = `${base}/mcp/`;
       full.value =
         "名称: a2a-gateway\n" +
         "通信方式: streamable-http\n" +
-        `URL: ${location.protocol}//${location.host}/mcp/`;
+        `URL: ${base}/mcp/`;
       btn2.classList.remove("primary"); btn.classList.add("primary");
     }
   }
+
+  // 内部 URL 输入框改动 → 同步刷新 URL 字段 + 复制区
+  internalBase.addEventListener("input", () => {
+    const cur = btn.classList.contains("primary") ? "streamable" : "sse";
+    setMode(cur);
+  });
+
+  // 初始默认值：docker compose 默认 service 名
+  if (!internalBase.value) internalBase.value = "http://buildingai-a2a-gateway:8000";
 
   btn.onclick = () => { setMode("streamable"); $("#mcpCopyStatus").textContent = ""; full.focus(); full.select(); };
   btn2.onclick = () => { setMode("sse"); $("#mcpCopyStatus").textContent = ""; full.focus(); full.select(); };
