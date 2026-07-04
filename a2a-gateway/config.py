@@ -15,12 +15,18 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
 
 log = logging.getLogger("a2a.config")
+
+# .env 文件路径（A2A_GATEWAY_ENV_FILE 配时用，否则跟 a2a-gateway 同目录）
+# 容器化部署：compose 把 ./a2a-gateway:/app 整个挂载，再把宿主 ./.env 挂到 /app/host.env
+# 所以容器内 ENV_FILE 实际是 /app/host.env（对应宿主 /root/buildingai-clean/.env）。
+ENV_FILE: Path = Path(os.getenv("A2A_GATEWAY_ENV_FILE", str(Path(__file__).parent / ".env"))).resolve()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -100,6 +106,27 @@ def _parse_users(raw: str) -> dict[str, dict]:
 USER_KEYS: dict[str, dict] = _parse_users(A2A_GATEWAY_USERS_RAW)
 
 
+# 启动时从 .env 文件读（容器里 A2A_GATEWAY_USERS env 默认空，必须靠 .env 文件）
+# 模块级 import 时调一次，让进程启动就有用户；admin.py addUser/delUser 后续再 reload。
+if ENV_FILE.exists():
+    try:
+        for _line in ENV_FILE.read_text(encoding="utf-8", errors="ignore").splitlines():
+            _s = _line.strip()
+            if _s.startswith("A2A_GATEWAY_USERS="):
+                A2A_GATEWAY_USERS_RAW = _s.split("=", 1)[1].strip()
+            elif _s.startswith("A2A_GATEWAY_MASTER_KEY="):
+                A2A_GATEWAY_MASTER_KEY = _s.split("=", 1)[1].strip()
+        if A2A_GATEWAY_MASTER_KEY:
+            try:
+                _fernet = Fernet(A2A_GATEWAY_MASTER_KEY.encode())
+            except Exception as _exc:
+                log.warning("启动时 MASTER_KEY 无效: %s", _exc)
+        USER_KEYS = _parse_users(A2A_GATEWAY_USERS_RAW)
+        log.info("启动时从 .env 加载：共 %d 个用户 (env_file=%s)", len(USER_KEYS), ENV_FILE)
+    except Exception as _exc:
+        log.warning("启动时读 .env 失败（继续以空 USERS 运行）: %s", _exc)
+
+
 def reload_user_keys(env_file: "Path | None" = None) -> int:
     """从 .env 文件（或环境变量）重读 A2A_GATEWAY_USERS + MASTER_KEY，更新 USER_KEYS 和 _fernet。
 
@@ -134,7 +161,13 @@ def reload_user_keys(env_file: "Path | None" = None) -> int:
             A2A_GATEWAY_USERS_RAW = ""
             _fernet = None
     else:
-        A2A_GATEWAY_USERS_RAW = os.getenv("A2A_GATEWAY_USERS", "")
+        # 不带 env_file 裸调用：从环境变量读 A2A_GATEWAY_USERS。
+        # 但容器里 compose 默认 A2A_GATEWAY_USERS=（空），裸调会清空所有用户。
+        # 强制要求传 env_file，避免误用。
+        raise RuntimeError(
+            "reload_user_keys() 必须传 env_file 参数（从 .env 文件读）。"
+            "裸调用从环境变量读会清空用户列表（容器里 A2A_GATEWAY_USERS env 为空）。"
+        )
     USER_KEYS = _parse_users(A2A_GATEWAY_USERS_RAW)
     log.info("reload_user_keys: 共 %d 个用户", len(USER_KEYS))
     return len(USER_KEYS)

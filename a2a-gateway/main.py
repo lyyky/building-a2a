@@ -21,7 +21,7 @@ import uvicorn
 
 import registry
 from a2a_server import app
-from config import BAI_BASE, BAI_PASSWORD, BAI_USERNAME, GATEWAY_HOST, GATEWAY_PORT, bai
+from config import BAI_BASE, BAI_PASSWORD, BAI_USERNAME, GATEWAY_HOST, GATEWAY_PORT, ENV_FILE, bai, reload_user_keys
 
 
 logging.basicConfig(
@@ -95,6 +95,11 @@ async def lifespan(app_):
             log.warning("首次 registry 拉取失败（继续运行，poller 会重试）: %s", exc)
 
     poller_task = await registry.start_poller()
+
+    # 启动时从 .env 加载多用户（容器里 A2A_GATEWAY_USERS env 默认空，
+    # 模块加载时 _parse_users("") 得到空 dict，必须显式 reload 从 .env 文件读）
+    n_users = reload_user_keys(ENV_FILE)
+    log.info("启动时从 %s 加载：共 %d 个用户", ENV_FILE, n_users)
 
     async with mcp_lifespan(app_) as _:
         try:
