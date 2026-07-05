@@ -159,7 +159,6 @@ services:
         build:
             context: ./a2a-gateway
             dockerfile: Dockerfile
-        image: lyyky/building-a2a-a2a-gateway:local
         container_name: buildingai-a2a-gateway${DOCKER_CONTAINER_SUFFIX:-}
         restart: always
         working_dir: /app
