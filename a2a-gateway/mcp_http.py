@@ -181,9 +181,11 @@ async def call_a2a_resource(
         return f"主 agent 调用失败: {exc}"
 
     # 3) chain：把主 agent 输出喂给链上每个 agent（顺序）
+    #    每个链节点同时拿到「原始任务（含 KB 上下文）+ 前一步输出」，
+    #    否则后续 agent 不知道原始任务是什么，会瞎回答
     chain_text = main_text
     if chain:
-        chain_text = await _run_chain(client, chain, main_text)
+        chain_text = await _run_chain(client, chain, query, main_text)
 
     # 4) parallel_agents：同 query 广播，聚合结果
     parallel_text = ""
@@ -216,18 +218,34 @@ async def _retrieve_kb_context(
 
 
 async def _run_chain(
-    client: a2a_client.A2AClient, chain: list[str], initial_text: str
+    client: a2a_client.A2AClient,
+    chain: list[str],
+    original_query: str,
+    initial_text: str,
 ) -> str:
-    """顺序链式调用：每个 agent 拿到前一个 agent 的输出，返回最终 agent 的输出。"""
-    cur = initial_text
-    for agent_id in chain:
+    """顺序链式调用：每个 agent 同时拿到「原始任务 + 前一步输出」。
+
+    否则只有第一个 agent 知道原始任务，链上后续 agent 只看到上一步的回复
+    （可能只是打招呼），没法继续完成实际工作。
+    """
+    prev = initial_text
+    for i, agent_id in enumerate(chain):
+        meta = registry.get_agent(agent_id) or {}
+        name = meta.get("name") or agent_id[:8]
+        # 把"原始任务"和"前一步输出"一起喂给当前 agent
+        # 第一个链节点拿到的 prev 已经是主 agent 的输出，所以 i=0 也有 prev
+        prompt = (
+            f"[原始任务]\n{original_query}\n\n"
+            f"[前一步（{'主 agent' if i == 0 else f'链节点 {i}'}）输出]\n{prev}\n\n"
+            f"请基于以上完成任务。"
+        )
         try:
-            resp = await client.send_message(agent_id, cur)
+            resp = await client.send_message(agent_id, prompt)
         except Exception as exc:
             log.warning("chain agent %s 调用失败: %s", agent_id, exc)
-            return f"[chain 中断于 {agent_id}] {exc}\n\n前置输出：\n{cur}"
-        cur = _summarize(resp)
-    return cur
+            return f"[chain 中断于 {name}] {exc}\n\n前置输出：\n{prev}"
+        prev = _summarize(resp)
+    return prev
 
 
 async def _run_parallel_agents(
