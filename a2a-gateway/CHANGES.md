@@ -82,3 +82,29 @@ curl -X POST http://localhost:8000/a2a/agents/<id> \
 - 检索响应 BuildingAI 字段结构 `{data:{records:[{segment, score}, ...]}}` 是按已知 schema 解析的；若你看到的字段不一致，告诉我我加上回退路径。
 - A2A 流式响应（`message/stream`）会用到 SSE，但实际 BuildingAI `chat/stream` 端点本身就是 SSE 式的、AI SDK 格式；当前实现是「一次取完整结果再切成 event」，
   不是真正的逐 token 流。够用，但严格 A2A 长任务场景可能需要重写 event_gen() 透传。
+
+## `call_a2a_resource` 多 agent 协作 + KB 上下文
+
+`mcp_http.py` 里的 `call_a2a_resource` 现在支持三种可选叠加（仅 `kind="agent"` 时生效）：
+
+| 参数 | 类型 | 行为 |
+|---|---|---|
+| `chain` | `list[str]` | 顺序链：A 输出 → 喂给 B → ...，返回最后一个 agent 的输出 |
+| `parallel_agents` | `list[str]` | 并行广播：同 query 调多个 agent，结果聚合成多段文本 |
+| `kb_ids` | `list[str]` | 调主 agent 前先并行检索这些 KB，片段作为上下文拼到 query |
+
+**典型组合**：先查 KB → 调专家 agent → 让评审 agent 过一遍。
+
+```python
+call_a2a_resource(
+    kind="agent",
+    id="专家-agent-id",
+    query="X 产品的保修条款？",
+    kb_ids=["手册-kb-id", "FAQ-kb-id"],
+    chain=["评审-agent-id"],
+    parallel_agents=["事实核查-agent-id"],
+)
+```
+
+`kind="dataset"` 模式下三个参数被忽略，行为与之前一致（保持向后兼容）。
+stdio 版 `a2a_mcp.py` 不需要改：每个 agent/KB 各自就是一个 MCP 工具，LLM 可自然串联调用。
