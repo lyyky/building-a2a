@@ -137,7 +137,13 @@ services:
             fi
             fi
 
+            echo "🎯 Building web client..."
+            cd /buildingai/packages/client
+            pnpm exec vite build
+            node /buildingai/scripts/release.mjs
+
             echo "🎯 Starting BuildingAI..."
+            cd /buildingai
             exec pnpm start --no-daemon
             '
         networks:
