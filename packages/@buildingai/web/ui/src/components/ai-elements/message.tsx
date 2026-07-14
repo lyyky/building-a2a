@@ -277,9 +277,115 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
 const streamdownPlugins = { cjk, code, math, mermaid };
 
-export const MessageResponse = memo(({ className, ...props }: MessageResponseProps) => (
+const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba)(?:\?.*)?(?:#.*)?$/i;
+const VIDEO_EXT_RE = /\.(mp4|webm|ogv|mov|m4v|avi|mkv)(?:\?.*)?(?:#.*)?$/i;
+
+type MediaKind = "video" | "audio" | "link";
+
+/** Classify a URL by its file extension (fast path, no network request). */
+function mediaKindFromExtension(url: string): MediaKind | null {
+  if (VIDEO_EXT_RE.test(url)) return "video";
+  if (AUDIO_EXT_RE.test(url)) return "audio";
+  return null;
+}
+
+/** Classify a URL by its `Content-Type` response header. */
+function mediaKindFromContentType(contentType: string): MediaKind {
+  const type = contentType.toLowerCase();
+  if (type.startsWith("video/")) return "video";
+  if (type.startsWith("audio/")) return "audio";
+  return "link";
+}
+
+// Cache probe results per URL so the same link isn't re-fetched on every render.
+const mediaKindCache = new Map<string, MediaKind>();
+
+/**
+ * Render audio/video URLs inline instead of opening them as a link, so a
+ * click on a media URL plays it directly rather than navigating away.
+ *
+ * Detection order: file extension first (cheap), then a HEAD request to read
+ * the `Content-Type` header for extension-less URLs (e.g. `/play?id=123`).
+ */
+function MessageLink(
+  props: ComponentProps<"a"> & { node?: unknown },
+): ReactElement | null {
+  const { href, children, className, node: _node, ...rest } = props;
+  const url = typeof href === "string" ? href : "";
+
+  const extKind = url ? mediaKindFromExtension(url) : null;
+  const [probedKind, setProbedKind] = useState<MediaKind | null>(() =>
+    url ? mediaKindCache.get(url) ?? null : null,
+  );
+
+  useEffect(() => {
+    // Skip probing when the extension already classified the URL, when we have
+    // a cached result, or for non-http(s) URLs (incl. streaming placeholders).
+    if (!url || extKind || mediaKindCache.has(url) || !/^https?:\/\//i.test(url)) {
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const res = await fetch(url, { method: "HEAD", signal: controller.signal });
+        const kind = mediaKindFromContentType(res.headers.get("content-type") ?? "");
+        mediaKindCache.set(url, kind);
+        if (!cancelled && kind !== "link") setProbedKind(kind);
+      } catch {
+        // Network/CORS failure — treat as a normal link and don't retry.
+        mediaKindCache.set(url, "link");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [url, extKind]);
+
+  const kind = extKind ?? probedKind;
+
+  if (url && kind === "video") {
+    return (
+      <video className={cn("my-2 max-w-full rounded-md", className)} controls src={url}>
+        {children}
+      </video>
+    );
+  }
+
+  if (url && kind === "audio") {
+    return (
+      <audio className={cn("my-2 w-full", className)} controls src={url}>
+        {children}
+      </audio>
+    );
+  }
+
+  return (
+    <a
+      className={className}
+      href={href}
+      rel="noreferrer"
+      target="_blank"
+      {...rest}
+    >
+      {children}
+    </a>
+  );
+}
+
+const DEFAULT_MESSAGE_COMPONENTS = { a: MessageLink } as const;
+
+export const MessageResponse = memo(({ className, components, ...props }: MessageResponseProps) => (
   <Streamdown
     className={cn("size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0", className)}
+    components={{ ...DEFAULT_MESSAGE_COMPONENTS, ...components }}
+    // Disable Streamdown's built-in linkSafety confirm modal so URL clicks
+    // navigate directly (or play inline via the `a` override above for media).
+    linkSafety={{ enabled: false }}
     plugins={streamdownPlugins}
     {...props}
   />
