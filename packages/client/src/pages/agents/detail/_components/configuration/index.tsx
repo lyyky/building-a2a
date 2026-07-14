@@ -481,6 +481,7 @@ export default function Configuration() {
               <TabsList className="shrink-0">
                 <TabsTrigger value="function">功能配置</TabsTrigger>
                 <TabsTrigger value="interface">界面配置</TabsTrigger>
+                <TabsTrigger value="voice">语音配置</TabsTrigger>
                 {!isThirdPartyMode && <TabsTrigger value="model">模型配置</TabsTrigger>}
               </TabsList>
             </div>
@@ -611,6 +612,20 @@ export default function Configuration() {
                 </EditorDndScope>
               </TabsContent>
 
+              <TabsContent
+                value="voice"
+                className="chat-scroll mt-0 flex h-full min-h-0 flex-col"
+              >
+                <TooltipProvider>
+                  <div className="space-y-6">
+                    <VoiceConfigSelector
+                      value={config.voiceConfig}
+                      onChange={(v) => updateConfig("voiceConfig", v)}
+                    />
+                  </div>
+                </TooltipProvider>
+              </TabsContent>
+
               {!isThirdPartyMode && (
                 <TabsContent
                   value="model"
@@ -625,10 +640,6 @@ export default function Configuration() {
                         onChatModelChange={(id) => updateConfig("modelConfig", { id })}
                         onModelRoutingChange={(routing) => updateConfig("modelRouting", routing)}
                         onMemoryConfigChange={(v) => updateConfig("memoryConfig", v)}
-                      />
-                      <VoiceConfigSelector
-                        value={config.voiceConfig}
-                        onChange={(v) => updateConfig("voiceConfig", v)}
                       />
                     </div>
                   </TooltipProvider>
