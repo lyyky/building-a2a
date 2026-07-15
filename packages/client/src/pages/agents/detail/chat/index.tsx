@@ -112,12 +112,16 @@ function AgentInfoPanel({
   conversations,
   isLoadingConversations,
   currentConversationId,
+  onNewConversation,
+  onSelectConversation,
 }: {
   agent: PublishedAgentDetail | undefined;
   isLoading: boolean;
   conversations: Array<{ id: string; title: string }>;
   isLoadingConversations: boolean;
   currentConversationId?: string;
+  onNewConversation: () => void;
+  onSelectConversation: (convId: string) => void;
 }) {
   const copyAgentMutation = useCopyAgentFromSquareMutation(agent?.id ?? "");
   const navigate = useNavigate();
@@ -271,7 +275,7 @@ function AgentInfoPanel({
                   variant="outline"
                   className="w-full"
                   type="button"
-                  onClick={() => navigate(`/agents/${agent?.id}/chat`)}
+                  onClick={onNewConversation}
                   disabled={!agent?.id}
                 >
                   新对话
@@ -316,7 +320,7 @@ function AgentInfoPanel({
                               "bg-muted-foreground/10 dark:bg-muted-foreground/10",
                           )}
                           title={item.title}
-                          onClick={() => navigate(`/agents/${agent?.id}/c/${item.id}`)}
+                          onClick={() => onSelectConversation(item.id)}
                         >
                           <span className="min-w-0 flex-1 truncate text-left">{item.title}</span>
                         </Button>
@@ -590,6 +594,7 @@ const AgentChatPage = () => {
   });
 
   const { ...contextValue } = assistantResult;
+  const { resetConversation } = assistantResult;
   const { data: conversationsData, isLoading: isLoadingConversations } = useAgentConversationsQuery(
     agentId || undefined,
     { page: 1, pageSize: 30, sortBy: "updatedAt" },
@@ -617,6 +622,36 @@ const AgentChatPage = () => {
   const [panelExpanded, setPanelExpanded] = useState(true);
   const isMobile = useIsMobile();
   const hasForm = formFields.length > 0;
+
+  /**
+   * Start a fresh conversation. If we're on a specific `/c/:uuid` URL we
+   * navigate (replace) to the bare `/chat` URL, which makes the
+   * `normalizedConversationId` effect fire its `isNavigatingAway` branch and
+   * reset all internal refs. If we're already on the bare `/chat` URL the
+   * effect won't fire, so we call `resetConversation` directly.
+   * On mobile the panel overlay must close either way so the chat area is
+   * visible after the action.
+   */
+  const handleNewConversation = useCallback(() => {
+    if (uuid) {
+      navigate(`/agents/${agentId}/chat`, { replace: true });
+    } else {
+      resetConversation();
+    }
+    if (isMobile) setPanelExpanded(false);
+  }, [uuid, agentId, navigate, resetConversation, isMobile]);
+
+  /**
+   * Switch to a past conversation. On mobile the panel overlay closes so the
+   * user actually sees the loaded history.
+   */
+  const handleSelectConversation = useCallback(
+    (convId: string) => {
+      navigate(`/agents/${agentId}/c/${convId}`);
+      if (isMobile) setPanelExpanded(false);
+    },
+    [agentId, navigate, isMobile],
+  );
 
   /**
    * Auto-open the form variables popover when any form fields exist,
@@ -770,6 +805,8 @@ const AgentChatPage = () => {
             conversations={conversations}
             isLoadingConversations={isLoadingConversations}
             currentConversationId={uuid}
+            onNewConversation={handleNewConversation}
+            onSelectConversation={handleSelectConversation}
           />
         </div>
       )}

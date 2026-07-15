@@ -99,6 +99,14 @@ const AGENT_MODEL_ID = "agent";
 
 export type UseAssistantForAgentReturn = AssistantContextValue & {
   clearMessages: (options?: { reinitThread?: boolean }) => void;
+  /**
+   * Hard-reset the active conversation: stops the stream, drops all messages,
+   * and clears the conversation id ref so the next send starts a fresh
+   * conversation on the backend. Use this for "新对话" actions where the
+   * user is already on the bare `/chat` URL (no `:uuid` segment) and a
+   * URL change won't trigger the `normalizedConversationId` effect.
+   */
+  resetConversation: () => void;
   isLoadingHistory: boolean;
   getDbMessageId: (clientMessageId: string) => string | undefined;
 };
@@ -187,6 +195,18 @@ export function useAssistantForAgent(
   const isFirstLoadRef = useRef(true);
   const editInProgressRef = useRef(false);
 
+  const resetConversation = useCallback(() => {
+    stop();
+    setMessages([]);
+    lastMessageDbIdRef.current = null;
+    pendingParentIdRef.current = null;
+    clearRepository();
+    pendingClearRef.current = true;
+    parentMapRef.current.clear();
+    isFirstLoadRef.current = true;
+    editInProgressRef.current = false;
+  }, [stop, setMessages, clearRepository]);
+
   useEffect(() => {
     const prevId = prevNormalizedConversationIdRef.current;
     const next = normalizedConversationId;
@@ -197,17 +217,9 @@ export function useAssistantForAgent(
     const isNavigatingAway = prevId !== undefined && next === undefined;
 
     if (isSwitching || isNavigatingAway) {
-      stop();
-      setMessages([]);
-      lastMessageDbIdRef.current = null;
-      pendingParentIdRef.current = null;
-      clearRepository();
-      pendingClearRef.current = true;
-      parentMapRef.current.clear();
-      isFirstLoadRef.current = true;
-      editInProgressRef.current = false;
+      resetConversation();
     }
-  }, [normalizedConversationId, stop, setMessages, clearRepository]);
+  }, [normalizedConversationId, resetConversation]);
 
   const shouldLoadInitial = Boolean(
     normalizedConversationId &&
@@ -383,6 +395,7 @@ export function useAssistantForAgent(
 
   return {
     clearMessages,
+    resetConversation,
     messages: [...repositoryMessages],
     displayMessages: displayMessages as DisplayMessage[],
     currentThreadId: undefined,
