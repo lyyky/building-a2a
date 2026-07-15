@@ -21,6 +21,7 @@ import { Separator } from "@buildingai/ui/components/ui/separator";
 import { Skeleton } from "@buildingai/ui/components/ui/skeleton";
 import { Textarea } from "@buildingai/ui/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@buildingai/ui/components/ui/tooltip";
+import { useIsMobile } from "@buildingai/ui/hooks/use-mobile";
 import { cn } from "@buildingai/ui/lib/utils";
 import { Bot, ChevronDown, ChevronLeft, ListIndentDecrease, Settings2 } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -158,7 +159,7 @@ function AgentInfoPanel({
       ? "免费"
       : `${chatModelBillingRule.power} 积分 / ${formatTokenCount(chatModelBillingRule.tokens)} tokens`;
   return (
-    <div className="flex h-full min-h-0 w-80 shrink-0 flex-col overflow-hidden">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
       <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden px-6 py-3 pr-3!">
         {isLoading ? (
           <>
@@ -614,6 +615,7 @@ const AgentChatPage = () => {
 
   const [formPopoverOpen, setFormPopoverOpen] = useState(false);
   const [panelExpanded, setPanelExpanded] = useState(true);
+  const isMobile = useIsMobile();
   const hasForm = formFields.length > 0;
 
   /**
@@ -624,6 +626,15 @@ const AgentChatPage = () => {
     if (formFields.length === 0) return;
     setFormPopoverOpen(true);
   }, [formFields.length]);
+
+  /**
+   * Collapse the side info panel by default on mobile to give the chat area
+   * the full viewport width. On mobile the panel is rendered as a full-screen
+   * overlay when re-opened via the header toggle.
+   */
+  useEffect(() => {
+    if (isMobile) setPanelExpanded(false);
+  }, [isMobile]);
 
   return (
     <div
@@ -746,13 +757,21 @@ const AgentChatPage = () => {
         </AssistantProvider>
       </div>
       {panelExpanded && (
-        <AgentInfoPanel
-          agent={agent}
-          isLoading={isAgentLoading}
-          conversations={conversations}
-          isLoadingConversations={isLoadingConversations}
-          currentConversationId={uuid}
-        />
+        <div
+          className={cn(
+            isMobile
+              ? "bg-background fixed inset-x-0 bottom-0 top-14 z-30"
+              : "w-80 shrink-0",
+          )}
+        >
+          <AgentInfoPanel
+            agent={agent}
+            isLoading={isAgentLoading}
+            conversations={conversations}
+            isLoadingConversations={isLoadingConversations}
+            currentConversationId={uuid}
+          />
+        </div>
       )}
     </div>
   );
