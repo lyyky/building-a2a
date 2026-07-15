@@ -1,0 +1,67 @@
+{
+    # Let's Encrypt account email — change to your own
+    email admin@ai.kunbot.cn
+    # Disable the admin API to reduce attack surface
+    admin off
+}
+
+# HTTP -> HTTPS redirect
+http://ai.kunbot.cn {
+    redir https://ai.kunbot.cn{uri} permanent
+}
+
+# Main reverse proxy
+ai.kunbot.cn {
+    encode gzip zstd
+
+    reverse_proxy nodejs:4090 {
+        # Forward the original Host header so the backend's FileUrlService
+        # builds absolute URLs with ai.kunbot.cn instead of the internal
+        # docker service name (nodejs:4090).
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+
+        # SSE / streaming chat responses must flush immediately, not be buffered.
+        flush_interval -1
+    }
+
+    log {
+        output file /data/caddy.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+}
+
+# Dify — also behind Caddy so file URLs returned by Dify are HTTPS and the
+# browser doesn't reject them as mixed content.
+# Caddy can't use Docker DNS for `docker-nginx-1` because the docker_default
+# network is managed by Dify's own docker-compose and gets torn down whenever
+# the user runs `docker compose down`. Instead, reach Dify via the host's
+# bridge gateway IP on the buildingai-network (172.18.0.1). Dify is mapped
+# to host:8080 (EXPOSE_NGINX_PORT=8080 in /root/dify/docker/.env), so we
+# proxy to 172.18.0.1:8080 and forward the original Host header so Dify's
+# nginx routes by server_name correctly.
+dify.kunbot.cn {
+    encode gzip zstd
+
+    reverse_proxy 172.18.0.1:8080 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+
+        flush_interval -1
+    }
+
+    log {
+        output file /data/caddy-dify.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+}

@@ -20,6 +20,10 @@ storage/*
 # a2a-gateway 容器内 bind mount 出来的 .env 副本（含 A2A_ADMIN_TOKEN 等敏感）
 /a2a-gateway/host.env
 
+# Caddy reverse proxy runtime data (cert cache + autosaved config)
+/docker/caddy/data/
+/docker/caddy/config/
+
 # Testing
 coverage
 
