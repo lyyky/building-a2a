@@ -15,6 +15,7 @@ import {
   ChartTooltipContent,
 } from "@buildingai/ui/components/ui/chart";
 import { Popover, PopoverContent, PopoverTrigger } from "@buildingai/ui/components/ui/popover";
+import { SidebarTrigger } from "@buildingai/ui/components/ui/sidebar";
 import { Skeleton } from "@buildingai/ui/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@buildingai/ui/components/ui/tabs";
 import { differenceInCalendarDays, format, subDays } from "date-fns";
@@ -354,8 +355,9 @@ export default function Monitoring({ agentId }: MonitoringProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-4">
+      <div className="flex shrink-0 flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-4">
+        <div className="flex items-center gap-2 md:gap-4">
+          <SidebarTrigger className="md:hidden" />
           <h1 className="text-lg font-semibold">监测</h1>
           <Tabs
             value={cardMode}
@@ -416,7 +418,7 @@ export default function Monitoring({ agentId }: MonitoringProps) {
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-px pb-6">
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-3">
-            <div className="flex gap-4">
+            <div className="flex flex-col gap-3 md:flex-row md:gap-4">
               <StatCard
                 title="对话统计"
                 icon={<MessageSquare className="size-4" />}
@@ -465,7 +467,7 @@ export default function Monitoring({ agentId }: MonitoringProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <DailyChart
               title="每日对话数"
               data={charts?.dailyRecords ?? []}

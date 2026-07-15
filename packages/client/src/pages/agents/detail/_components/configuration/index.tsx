@@ -14,6 +14,7 @@ import type {
 } from "@buildingai/types";
 import { EditorDndScope } from "@buildingai/ui/components/editor";
 import { Button } from "@buildingai/ui/components/ui/button";
+import { SidebarTrigger } from "@buildingai/ui/components/ui/sidebar";
 // import { Switch } from "@buildingai/ui/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@buildingai/ui/components/ui/tabs";
 import { TooltipProvider } from "@buildingai/ui/components/ui/tooltip";
@@ -475,10 +476,11 @@ export default function Configuration() {
       />
       <OrchestrationLayout>
         <Tabs defaultValue="function" className="flex h-full min-h-0 flex-col gap-0">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex min-w-0 items-center gap-4">
+          <div className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:gap-4 md:px-6 md:py-4">
+            <div className="flex min-w-0 items-center gap-2 md:gap-4">
+              <SidebarTrigger className="md:hidden" />
               <h1 className="shrink-0 text-lg font-semibold">编排</h1>
-              <TabsList className="shrink-0">
+              <TabsList className="max-w-full shrink-0 overflow-x-auto">
                 <TabsTrigger value="function">功能配置</TabsTrigger>
                 <TabsTrigger value="interface">界面配置</TabsTrigger>
                 <TabsTrigger value="voice">语音配置</TabsTrigger>
@@ -514,7 +516,7 @@ export default function Configuration() {
             </div>
           </div>
 
-          <div className="grid h-full min-h-0 grid-cols-2 gap-4 pt-px pl-3">
+          <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-3 pt-px md:h-full md:grid md:grid-cols-2 md:overflow-visible">
             <div className="flex h-full min-h-0 flex-col pb-4">
               <TabsContent
                 value="function"

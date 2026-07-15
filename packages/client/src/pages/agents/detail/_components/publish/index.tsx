@@ -1,6 +1,7 @@
 import { useAgentDetailQuery, useUpdatePublishConfigMutation } from "@buildingai/services/web";
 import { Badge } from "@buildingai/ui/components/ui/badge";
 import { Card, CardContent } from "@buildingai/ui/components/ui/card";
+import { SidebarTrigger } from "@buildingai/ui/components/ui/sidebar";
 import { Skeleton } from "@buildingai/ui/components/ui/skeleton";
 import { Switch } from "@buildingai/ui/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@buildingai/ui/components/ui/tabs";
@@ -261,10 +262,13 @@ export default function Publish() {
 
   return (
     <>
-      <div className="flex h-full flex-col overflow-y-auto px-6 py-4">
+      <div className="flex h-full flex-col overflow-y-auto px-4 py-3 md:px-6 md:py-4">
         <div className="space-y-6">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold">发布渠道</h1>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+            <div className="flex items-center gap-2 md:gap-4">
+              <SidebarTrigger className="md:hidden" />
+              <h1 className="text-lg font-semibold">发布渠道</h1>
+            </div>
             <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-5">
               <TabsList className="w-fit rounded-xl">
                 <TabsTrigger value="all">全部</TabsTrigger>
