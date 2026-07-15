@@ -160,7 +160,7 @@ function AgentInfoPanel({
       : `${chatModelBillingRule.power} 积分 / ${formatTokenCount(chatModelBillingRule.tokens)} tokens`;
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden px-6 py-3 pr-3!">
+      <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto px-6 py-3 pr-3!">
         {isLoading ? (
           <>
             <Skeleton className="h-8 w-48" />
@@ -202,7 +202,7 @@ function AgentInfoPanel({
             {agent?.description ? (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <p className="text-muted-foreground line-clamp-6 text-sm leading-relaxed">
+                  <p className="text-muted-foreground line-clamp-3 text-sm leading-relaxed md:line-clamp-6">
                     {agent.description}
                   </p>
                 </TooltipTrigger>
